@@ -1,6 +1,8 @@
-﻿import { useNavigate } from 'react-router-dom'
+﻿import { useNavigate, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
 import { useUserStore } from '../stores/userStore'
-import { motion } from 'framer-motion'
+import { GoogleSignIn } from '../components/GoogleSignIn'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   ArrowRight,
   MonitorPlay,
@@ -108,11 +110,46 @@ function getInitials(name: string): string {
 
 export const Landing = () => {
   const navigate = useNavigate()
+  const location = useLocation()
   const name   = useUserStore(s => s.name)
   const avatar = useUserStore(s => s.avatar)
+  const [showSignIn, setShowSignIn] = useState(false)
+  const signInRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if ((location.state as { requireSignIn?: boolean } | null)?.requireSignIn) {
+      setShowSignIn(true)
+    }
+  }, [location.state])
 
   return (
     <div className="min-h-screen bg-page text-white overflow-x-hidden">
+      {/* Sign-in modal */}
+      <AnimatePresence>
+        {showSignIn && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowSignIn(false) }}
+          >
+            <motion.div
+              ref={signInRef}
+              initial={{ opacity: 0, scale: 0.95, y: 16 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 16 }}
+              transition={{ duration: 0.2 }}
+              className="bg-card border border-white/10 rounded-2xl p-8 w-full max-w-sm mx-4 shadow-2xl"
+            >
+              <h2 className="text-xl font-bold text-white mb-1">Sign in to continue</h2>
+              <p className="text-zinc-400 text-sm mb-6">You need an account to access this feature.</p>
+              <GoogleSignIn onSuccess={() => setShowSignIn(false)} />
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Ambient glows */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
         <div className="absolute -top-32 left-1/3 w-[600px] h-[600px] bg-indigo-600/8 rounded-full blur-[120px]" />
@@ -127,7 +164,7 @@ export const Landing = () => {
           <span className="font-bold text-white text-sm sm:text-base tracking-tight">Arch<span className="text-indigo-400">ly</span></span>
         </div>
         <div className="flex items-center gap-1 sm:gap-3">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 hover:opacity-80 transition-opacity" title="Profile">
+          <button onClick={() => name ? navigate('/dashboard') : setShowSignIn(true)} className="flex items-center gap-2 hover:opacity-80 transition-opacity" title="Profile">
             {name ? (
               avatar
                 ? <img src={avatar} alt={name} className="w-8 h-8 rounded-full object-cover border border-white/20" />
@@ -138,7 +175,7 @@ export const Landing = () => {
           </button>
           <ThemeToggle />
           <button
-            onClick={() => navigate('/practice')}
+            onClick={() => name ? navigate('/practice') : setShowSignIn(true)}
             className="flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-colors"
           >
             <span className="hidden sm:inline">Start Practicing</span>
@@ -190,13 +227,13 @@ export const Landing = () => {
               className="flex flex-col sm:flex-row gap-3"
             >
               <button
-                onClick={() => navigate('/practice')}
+                onClick={() => name ? navigate('/practice') : setShowSignIn(true)}
                 className="flex items-center justify-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold rounded-xl transition-all shadow-lg shadow-blue-900/30 text-sm"
               >
                 Start for free <ArrowRight size={15} />
               </button>
               <button
-                onClick={() => navigate('/cv-analysis')}
+                onClick={() => name ? navigate('/cv-analysis') : setShowSignIn(true)}
                 className="flex items-center justify-center gap-2 px-6 py-3 border border-white/10 hover:border-white/20 text-zinc-300 hover:text-white font-semibold rounded-xl transition-all bg-white/[0.03] text-sm"
               >
                 <FileSearch size={15} /> Analyze my CV
@@ -331,7 +368,7 @@ export const Landing = () => {
               <p className="mt-2 text-zinc-400 text-sm">The canonical list every FAANG interviewer draws from.</p>
             </div>
             <button
-              onClick={() => navigate('/practice')}
+              onClick={() => name ? navigate('/practice') : setShowSignIn(true)}
               className="hidden md:flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
               View all 25 problems
@@ -348,7 +385,7 @@ export const Landing = () => {
                 whileInView="show"
                 viewport={{ once: true, amount: 0.2 }}
                 variants={fadeUp}
-                onClick={() => navigate(`/practice/${p.id}`)}
+                onClick={() => name ? navigate(`/practice/${p.id}`) : setShowSignIn(true)}
                 className="p-5 rounded-xl bg-card border border-white/[0.08] hover:border-white/[0.18] cursor-pointer transition-all duration-200 hover:bg-card group"
               >
                 <div className="flex items-start justify-between mb-3">
@@ -379,7 +416,7 @@ export const Landing = () => {
             className="flex justify-center mt-8 md:hidden"
           >
             <button
-              onClick={() => navigate('/practice')}
+              onClick={() => name ? navigate('/practice') : setShowSignIn(true)}
               className="flex items-center gap-1.5 text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
             >
               View all 25 problems
@@ -415,7 +452,7 @@ export const Landing = () => {
                 </p>
               </div>
               <button
-                onClick={() => navigate('/cv-analysis')}
+                onClick={() => name ? navigate('/cv-analysis') : setShowSignIn(true)}
                 className="self-start flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl transition-all text-sm"
               >
                 Analyze My CV Free <ArrowRight size={15} />

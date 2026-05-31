@@ -11,6 +11,6 @@ export function ProtectedRoute() {
   }, [])
 
   if (!ready) return null
-  if (!googleId) return <Navigate to="/" replace />
+  if (!googleId) return <Navigate to="/" replace state={{ requireSignIn: true }} />
   return <Outlet />
 }
