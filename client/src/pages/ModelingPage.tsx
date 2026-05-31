@@ -285,7 +285,7 @@ function AskAiDropdown({ onAction }: AskAiDropdownProps) {
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
+      if (ref.current && !ref.current.contains(e.target as unknown as globalThis.Node)) {
         setOpen(false)
       }
     }

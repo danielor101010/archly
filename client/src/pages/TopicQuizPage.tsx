@@ -3,7 +3,7 @@ import { apiUrl } from '../lib/api'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, Zap, AlertTriangle, ArrowRightLeft, Lightbulb, Sparkles } from 'lucide-react'
-import { QUIZ_QUESTIONS } from '../config/quizQuestions'
+import { QUIZ_QUESTIONS, type QuizQuestion } from '../config/quizQuestions'
 import { shuffleQuestions } from '../lib/shuffleQuiz'
 import { loadGeneratedQuestions, saveGeneratedQuestions } from '../lib/quizCache'
 import { TOPIC_SCENARIOS, type ScenarioType } from '../config/topicScenarios'
@@ -24,7 +24,7 @@ const LEVEL_COLORS: Record<string, string> = {
   senior: 'text-red-400 bg-red-500/10 border-red-500/20',
 }
 
-function selectQuestions(allQuestions: ReturnType<typeof QUIZ_QUESTIONS[string]>, userLevel: string) {
+function selectQuestions(allQuestions: QuizQuestion[], userLevel: string) {
   if (!allQuestions || allQuestions.length === 0) return []
   const easy   = allQuestions.filter(q => q.difficulty === 'Easy')
   const medium = allQuestions.filter(q => q.difficulty === 'Medium')

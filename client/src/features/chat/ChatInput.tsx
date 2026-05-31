@@ -6,7 +6,7 @@ import { sendWS } from '../../lib/ws'
 import { HintButton } from './HintButton'
 import { SolutionButton } from './SolutionButton'
 
-interface ChatInputProps { mode?: string }
+interface ChatInputProps { mode?: 'practice' | 'interview' | 'concept' | string }
 
 const placeholders = {
   interview: 'Describe your architecture...',
@@ -59,7 +59,7 @@ export const ChatInput = ({ mode }: ChatInputProps) => {
           value={value}
           onChange={handleInput}
           onKeyDown={handleKey}
-          placeholder={isStreaming ? 'AI is thinking...' : placeholders[mode]}
+          placeholder={isStreaming ? 'AI is thinking...' : (placeholders[mode as keyof typeof placeholders] ?? 'Type your message...')}
           disabled={isDisabled}
           rows={1}
           className="flex-1 bg-transparent text-zinc-200 text-sm placeholder-zinc-600 resize-none outline-none leading-relaxed min-h-[20px] max-h-[120px]"
