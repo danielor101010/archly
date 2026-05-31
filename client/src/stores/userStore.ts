@@ -137,22 +137,38 @@ export const useUserStore = create<UserState>()(
       signOut: () => set({ name: '', googleId: undefined, email: undefined, avatar: undefined }),
 
       restoreProgress: (saved) => {
-        // Merge server-saved progress into local state — don't overwrite local if it's richer
         const cur = get()
         const mergedQuizProgress = { ...(saved.quizProgress ?? {}), ...cur.quizProgress }
         const mergedSolved = Array.from(new Set([...(saved.solvedProblems ?? []), ...cur.solvedProblems]))
-        const mergedHistory = [...(cur.sessionHistory), ...(saved.sessionHistory ?? [])
+        const mergedHistory = [...cur.sessionHistory, ...(saved.sessionHistory ?? [])
           .filter(r => !cur.sessionHistory.some(c => c.id === r.id))].slice(0, 50)
-        set({ quizProgress: mergedQuizProgress, solvedProblems: mergedSolved, sessionHistory: mergedHistory })
+        const mergedChallenges = Array.from(new Set([...(saved.completedChallengeIds ?? []), ...cur.completedChallengeIds]))
+        set({
+          quizProgress: mergedQuizProgress,
+          solvedProblems: mergedSolved,
+          sessionHistory: mergedHistory,
+          completedChallengeIds: mergedChallenges,
+          level: saved.level ?? cur.level,
+          sessionsCompleted: Math.max(saved.sessionsCompleted ?? 0, cur.sessionsCompleted),
+          totalTokensUsed: Math.max(saved.totalTokensUsed ?? 0, cur.totalTokensUsed),
+          streakDays: Math.max(saved.streakDays ?? 0, cur.streakDays),
+          lastChallengeCompletedDate: saved.lastChallengeCompletedDate ?? cur.lastChallengeCompletedDate,
+        })
       },
 
       syncToServer: () => {
-        const { googleId, quizProgress, solvedProblems, sessionHistory, sessionsCompleted, level } = get()
-        if (!googleId) return
+        const s = get()
+        if (!s.googleId) return
         fetch(apiUrl('/api/users/sync'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ googleId, progress: { quizProgress, solvedProblems, sessionHistory, sessionsCompleted, level } }),
+          body: JSON.stringify({
+            googleId: s.googleId, name: s.name, email: s.email, avatar: s.avatar,
+            level: s.level, sessionsCompleted: s.sessionsCompleted, totalTokensUsed: s.totalTokensUsed,
+            streakDays: s.streakDays, lastChallengeDate: s.lastChallengeCompletedDate,
+            completedChallengeIds: s.completedChallengeIds, solvedProblems: s.solvedProblems,
+            createdAt: s.createdAt, quizProgress: s.quizProgress, sessionHistory: s.sessionHistory,
+          }),
         }).catch(() => {})
       },
 

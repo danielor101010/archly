@@ -3,38 +3,10 @@ import express, { Request, Response } from 'express'
 import cors from 'cors'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { join } from 'path'
-import nodemailer from 'nodemailer'
 import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
-
-// ── File-backed user store (survives server restarts) ─────────────────────────
-const DATA_DIR  = join(process.cwd(), 'data')
-const USERS_FILE = join(DATA_DIR, 'users.json')
-
-interface UserRecord {
-  progress?: Record<string, unknown>
-  welcomed?: boolean   // true = welcome email already sent
-}
-
-function loadUserStore(): Map<string, UserRecord> {
-  try {
-    mkdirSync(DATA_DIR, { recursive: true })
-    const raw = readFileSync(USERS_FILE, 'utf-8')
-    return new Map(Object.entries(JSON.parse(raw) as Record<string, UserRecord>))
-  } catch { return new Map() }
-}
-
-function saveUserStore(): void {
-  try {
-    mkdirSync(DATA_DIR, { recursive: true })
-    writeFileSync(USERS_FILE, JSON.stringify(Object.fromEntries(persistedUsers), null, 2))
-  } catch (e) { console.error('[Users] save failed:', e) }
-}
-
-const persistedUsers = loadUserStore()
+import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
 
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
@@ -206,20 +178,74 @@ Return ONLY valid JSON (no markdown):
   }
 })
 
-// ── User progress sync (file-backed via persistedUsers) ─────────────────────
-app.post('/api/users/sync', (req: Request, res: Response) => {
-  const { googleId, progress } = req.body as { googleId?: string; progress?: Record<string, unknown> }
-  if (!googleId || !progress) { res.status(400).json({ ok: false }); return }
-  const existing = persistedUsers.get(googleId) ?? {}
-  persistedUsers.set(googleId, { ...existing, progress })
-  saveUserStore()
-  res.json({ ok: true })
+// ── User progress sync ────────────────────────────────────────────────────────
+app.post('/api/users/sync', async (req: Request, res: Response) => {
+  const { googleId, name, email, avatar, level, sessionsCompleted, totalTokensUsed,
+    streakDays, lastChallengeDate, completedChallengeIds, solvedProblems, createdAt,
+    quizProgress, sessionHistory } = req.body as {
+    googleId?: string; name?: string; email?: string; avatar?: string
+    level?: string; sessionsCompleted?: number; totalTokensUsed?: number
+    streakDays?: number; lastChallengeDate?: string; completedChallengeIds?: string[]
+    solvedProblems?: string[]; createdAt?: number
+    quizProgress?: Record<string, { score: number; total: number; grade: string; completedAt: number }>
+    sessionHistory?: Array<{ id: string; problemId: string; problemTitle: string; mode: string; date: number; scores: { architecture: number; scalability: number; reliability: number; communication: number; overall: number; grade: string } }>
+  }
+  if (!googleId) { res.status(400).json({ ok: false }); return }
+
+  try {
+    // Upsert core user fields
+    if (name && email) {
+      await upsertUser(googleId, { name, email, avatar, level, sessions_completed: sessionsCompleted,
+        total_tokens_used: totalTokensUsed, streak_days: streakDays,
+        last_challenge_date: lastChallengeDate, completed_challenge_ids: completedChallengeIds,
+        solved_problems: solvedProblems, created_at: createdAt })
+    }
+    // Upsert quiz progress entries
+    if (quizProgress) {
+      for (const [key, val] of Object.entries(quizProgress)) {
+        await upsertQuizProgress(googleId, key, val.score, val.total, val.grade, val.completedAt)
+      }
+    }
+    // Upsert session records
+    if (sessionHistory) {
+      for (const r of sessionHistory) {
+        await upsertSessionRecord({
+          id: r.id, user_id: googleId, problem_id: r.problemId, problem_title: r.problemTitle,
+          mode: r.mode, date: r.date,
+          score_architecture: r.scores.architecture, score_scalability: r.scores.scalability,
+          score_reliability: r.scores.reliability, score_communication: r.scores.communication,
+          score_overall: r.scores.overall, score_grade: r.scores.grade,
+        })
+      }
+    }
+    res.json({ ok: true })
+  } catch (err) {
+    console.error('[DB] sync error:', err)
+    res.status(500).json({ ok: false })
+  }
 })
 
-app.get('/api/users/:googleId', (req: Request, res: Response) => {
-  const record = persistedUsers.get(String(req.params.googleId))
-  if (!record?.progress) { res.status(404).json({ found: false }); return }
-  res.json({ found: true, progress: record.progress })
+app.get('/api/users/:googleId', async (req: Request, res: Response) => {
+  try {
+    const googleId = String(req.params.googleId)
+    const user = await getUser(googleId)
+    if (!user) { res.status(404).json({ found: false }); return }
+
+    const quizProgress = await getQuizProgress(googleId)
+    const records = await getSessionRecords(googleId)
+    const sessionHistory = records.map(r => ({
+      id: r.id, problemId: r.problem_id, problemTitle: r.problem_title,
+      mode: r.mode, date: r.date,
+      scores: { architecture: r.score_architecture, scalability: r.score_scalability,
+        reliability: r.score_reliability, communication: r.score_communication,
+        overall: r.score_overall, grade: r.score_grade },
+    }))
+
+    res.json({ found: true, user: { ...user, quizProgress, sessionHistory } })
+  } catch (err) {
+    console.error('[DB] fetch user error:', err)
+    res.status(500).json({ found: false })
+  }
 })
 
 // ── REST: Send welcome email — only on true sign-up (never seen this googleId before) ──
@@ -228,16 +254,14 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
   if (!email || !name || !googleId) { res.status(400).json({ ok: false }); return }
 
   // Already welcomed — this is a login, not a sign-up
-  const existing = persistedUsers.get(googleId)
-  if (existing?.welcomed) {
+  if (await isWelcomed(googleId)) {
     res.json({ ok: false, reason: 'already_sent' })
     return
   }
 
-  const gmailUser = process.env.GMAIL_USER
-  const gmailPass = process.env.GMAIL_PASS
-  if (!gmailUser || !gmailPass) {
-    console.warn('[Email] GMAIL_USER / GMAIL_PASS not set — welcome email skipped')
+  const brevoKey = process.env.BREVO_API_KEY
+  if (!brevoKey) {
+    console.warn('[Email] BREVO_API_KEY not set — welcome email skipped')
     res.json({ ok: false, reason: 'no_credentials' })
     return
   }
@@ -261,19 +285,24 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
   `
 
   try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: { user: gmailUser, pass: gmailPass },
+    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'Archly', email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' },
+        to: [{ email }],
+        subject: `Welcome to Archly, ${name}!`,
+        htmlContent: html,
+      }),
     })
-    await transporter.sendMail({
-      from: `Archly <${gmailUser}>`,
-      to: email,
-      subject: `Welcome to Archly, ${name}!`,
-      html,
-    })
+    if (!resp.ok) {
+      const err = await resp.text()
+      console.error('[Email] Brevo error:', err)
+      res.json({ ok: false, reason: 'send_failed' })
+      return
+    }
     // Only mark as welcomed after confirmed delivery
-    persistedUsers.set(googleId, { ...(existing ?? {}), welcomed: true })
-    saveUserStore()
+    await setWelcomed(googleId)
     res.json({ ok: true })
   } catch (err) {
     console.error('[Email] Send error:', err)
@@ -281,22 +310,27 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
   }
 })
 
-// ── In-memory cache for AI-generated quiz questions (keyed by topic slug) ───────
 // ── REST: Test email (dev/debug only) ────────────────────────────────────────
 app.get('/api/test-email', async (_req: Request, res: Response) => {
-  const gmailUser = process.env.GMAIL_USER
-  const gmailPass = process.env.GMAIL_PASS
-  if (!gmailUser || !gmailPass) { res.json({ ok: false, reason: 'no_credentials' }); return }
+  const brevoKey = process.env.BREVO_API_KEY
+  if (!brevoKey) { res.json({ ok: false, reason: 'no_credentials' }); return }
   try {
-    const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 587, secure: false, auth: { user: gmailUser, pass: gmailPass }, family: 4 } as nodemailer.TransportOptions)
-    await transporter.sendMail({ from: `Archly <${gmailUser}>`, to: gmailUser, subject: 'Archly email test', html: '<p>Email is working!</p>' })
-    res.json({ ok: true })
+    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'Archly', email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' },
+        to: [{ email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' }],
+        subject: 'Archly email test',
+        htmlContent: '<p>Email is working!</p>',
+      }),
+    })
+    const data = await resp.json() as unknown
+    res.json({ ok: resp.ok, data })
   } catch (err) {
     res.json({ ok: false, error: String(err) })
   }
 })
-
-const generatedQuizCache = new Map<string, Array<{ id: string; question: string; options: string[]; correct: number; explanation: string; difficulty: 'Easy' | 'Medium' | 'Hard' }>>()
 
 // ── REST: Generate more quiz questions for a topic ────────────────────────────
 app.post('/api/generate-quiz-questions', async (req: Request, res: Response) => {
@@ -310,9 +344,9 @@ app.post('/api/generate-quiz-questions', async (req: Request, res: Response) => 
     return
   }
 
-  // Return cached generated questions if available
-  const cached = generatedQuizCache.get(topicSlug)
-  if (cached && cached.length > 0) {
+  // Return DB-cached questions if available
+  const cached = await getGeneratedQuestions(topicSlug)
+  if (cached.length > 0) {
     res.json({ questions: cached })
     return
   }
@@ -356,8 +390,8 @@ Return ONLY valid JSON (no markdown):
     const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(clean)
     const questions = parsed.questions ?? []
-    // Cache for future users
-    generatedQuizCache.set(topicSlug, questions)
+    // Persist to DB for future requests
+    await saveGeneratedQuestions(topicSlug, questions)
     res.json({ questions })
   } catch (err) {
     console.error('[API] Quiz generation error:', err)

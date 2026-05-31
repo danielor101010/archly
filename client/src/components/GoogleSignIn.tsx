@@ -89,11 +89,9 @@ export function GoogleSignIn({ onSuccess }: GoogleSignInProps) {
           // Restore saved progress from server (survives localStorage clears)
           fetch(`${apiUrl(`/api/users/${decoded.sub}`)}`)
             .then(r => r.json())
-            .then((data: { found: boolean; progress?: Record<string, unknown> }) => {
-              if (data.found && data.progress) {
-                const store = useUserStore.getState()
-                const p = data.progress
-                if (p.quizProgress) store.restoreProgress(p as never)
+            .then((data: { found: boolean; user?: Record<string, unknown> }) => {
+              if (data.found && data.user) {
+                useUserStore.getState().restoreProgress(data.user as never)
               }
             })
             .catch(() => {})
