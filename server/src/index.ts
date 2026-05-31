@@ -282,6 +282,20 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
 })
 
 // ── In-memory cache for AI-generated quiz questions (keyed by topic slug) ───────
+// ── REST: Test email (dev/debug only) ────────────────────────────────────────
+app.get('/api/test-email', async (_req: Request, res: Response) => {
+  const gmailUser = process.env.GMAIL_USER
+  const gmailPass = process.env.GMAIL_PASS
+  if (!gmailUser || !gmailPass) { res.json({ ok: false, reason: 'no_credentials' }); return }
+  try {
+    const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 587, secure: false, auth: { user: gmailUser, pass: gmailPass }, family: 4 } as nodemailer.TransportOptions)
+    await transporter.sendMail({ from: `Archly <${gmailUser}>`, to: gmailUser, subject: 'Archly email test', html: '<p>Email is working!</p>' })
+    res.json({ ok: true })
+  } catch (err) {
+    res.json({ ok: false, error: String(err) })
+  }
+})
+
 const generatedQuizCache = new Map<string, Array<{ id: string; question: string; options: string[]; correct: number; explanation: string; difficulty: 'Easy' | 'Medium' | 'Hard' }>>()
 
 // ── REST: Generate more quiz questions for a topic ────────────────────────────
