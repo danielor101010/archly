@@ -417,7 +417,7 @@ export const TopicQuizPage = () => {
                     )}
                   </AnimatePresence>
 
-                  {/* Next / finish buttons */}
+                  {/* Next / finish buttons — sticky on mobile */}
                   <AnimatePresence>
                     {hasAnswered && (
                       <motion.div
@@ -425,7 +425,7 @@ export const TopicQuizPage = () => {
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0 }}
                         transition={{ duration: 0.15 }}
-                        className="flex flex-col gap-2"
+                        className="flex flex-col gap-2 sticky bottom-4 sm:static"
                       >
                         {currentIndex < allActiveQuestions.length - 1 ? (
                           <button

@@ -233,7 +233,7 @@ export const LanguageQuizPage = () => {
 
                   <AnimatePresence>
                     {hasAnswered && (
-                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-2">
+                      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex flex-col gap-2 sticky bottom-4 sm:static">
                         {!isLast ? (
                           <button
                             onClick={() => setCurrentIndex(i => i + 1)}
