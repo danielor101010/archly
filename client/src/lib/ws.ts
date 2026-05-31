@@ -17,7 +17,7 @@ class WSClient {
   private streamBuf = ''        // buffer for stripping split canvas/board commands
 
   connect() {
-    if (this.ws?.readyState === WebSocket.OPEN) return
+    if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return
 
     this.ws = new WebSocket(WS_URL)
 

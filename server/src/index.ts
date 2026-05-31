@@ -233,10 +233,6 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
     return
   }
 
-  // Mark as welcomed immediately (before sending) to prevent duplicate sends
-  persistedUsers.set(googleId, { ...(existing ?? {}), welcomed: true })
-  saveUserStore()
-
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {
     console.warn('[Email] RESEND_API_KEY not set — welcome email skipped')
@@ -279,6 +275,9 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
       res.json({ ok: false, reason: 'send_failed' })
       return
     }
+    // Only mark as welcomed after confirmed delivery
+    persistedUsers.set(googleId, { ...(existing ?? {}), welcomed: true })
+    saveUserStore()
     res.json({ ok: true })
   } catch (err) {
     console.error('[Email] Network error:', err)
