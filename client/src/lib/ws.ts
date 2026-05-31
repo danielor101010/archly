@@ -148,7 +148,7 @@ class WSClient {
               id: crypto.randomUUID(),
               problemId,
               problemTitle: problemId,
-              mode: sessionStore.mode ?? 'practice',
+              mode: (sessionStore.mode ?? 'practice') as 'practice' | 'interview',
               date: Date.now(),
               scores,
             })

@@ -6,7 +6,7 @@ import { ChatInput } from './ChatInput'
 import { TypingIndicator } from './TypingIndicator'
 import { Bot, Zap } from 'lucide-react'
 
-interface ChatInterfaceProps { mode: 'practice' | 'interview' | 'concept' }
+interface ChatInterfaceProps { mode: 'practice' | 'interview' | 'concept' | string }
 
 export const ChatInterface = ({ mode }: ChatInterfaceProps) => {
   const { messages, isStreaming, streamingContent } = useChatStore()

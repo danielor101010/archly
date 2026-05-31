@@ -43,7 +43,7 @@ export const TopicList = () => {
     }, {}),
   [filtered])
 
-  const handleStudy = (slug: string, hasContent: boolean, title: string) => {
+  const handleStudy = (slug: string, hasContent: boolean) => {
     if (hasContent) {
       navigate(`/learn/${slug}`)
     } else {
@@ -150,7 +150,7 @@ export const TopicList = () => {
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: i * 0.02 }}
                       className="group bg-card border border-white/[0.05] rounded-xl overflow-hidden hover:border-white/12 transition-all duration-200 cursor-pointer"
-                      onClick={() => handleStudy(topic.slug, topic.hasContent, topic.title)}
+                      onClick={() => handleStudy(topic.slug, topic.hasContent)}
                     >
                       <div className="h-0.5" style={{ background: topic.color }} />
                       <div className="p-3">
@@ -194,7 +194,7 @@ export const TopicList = () => {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.02 }}
                       className="group flex items-center gap-3 px-4 py-3 bg-card border border-white/[0.05] rounded-xl hover:border-white/12 cursor-pointer transition-all"
-                      onClick={() => handleStudy(topic.slug, topic.hasContent, topic.title)}
+                      onClick={() => handleStudy(topic.slug, topic.hasContent)}
                     >
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ background: topic.color }} />
                       <span className="text-white text-sm font-medium group-hover:text-indigo-300 transition-colors flex-1 truncate">{topic.title}</span>

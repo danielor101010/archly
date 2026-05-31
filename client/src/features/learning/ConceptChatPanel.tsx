@@ -162,7 +162,7 @@ export const ConceptChatPanel = ({ topicSlug, topicTitle }: ConceptChatPanelProp
                   </div>
                 )}
                 {messages.map(msg => (
-                  <MessageItem key={msg.id} message={msg} />
+                  <MessageItem key={msg.id} message={msg} mode="concept" />
                 ))}
                 {isStreaming && <TypingIndicator mode="concept" />}
                 <div ref={bottomRef} />

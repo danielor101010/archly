@@ -8,7 +8,7 @@ import { useGraphStore } from '../../stores/graphStore'
 
 interface MessageItemProps {
   message: ChatMessage
-  mode: 'practice' | 'interview'
+  mode?: string
 }
 
 // Map keyword → node type

@@ -6,7 +6,7 @@ import { sendWS } from '../../lib/ws'
 import { HintButton } from './HintButton'
 import { SolutionButton } from './SolutionButton'
 
-interface ChatInputProps { mode: 'practice' | 'interview' }
+interface ChatInputProps { mode?: string }
 
 const placeholders = {
   interview: 'Describe your architecture...',

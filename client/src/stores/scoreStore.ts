@@ -10,7 +10,7 @@ interface Scores {
   verdict: string
 }
 
-interface ScoreState {
+export interface ScoreState {
   scores: Scores
   setScores: (scores: Scores) => void
   reset: () => void

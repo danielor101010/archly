@@ -1,7 +1,7 @@
 ﻿import { motion } from 'framer-motion'
 import { Bot, Zap } from 'lucide-react'
 
-export const TypingIndicator = ({ mode = 'practice' }: { mode?: 'practice' | 'interview' | 'concept' }) => {
+export const TypingIndicator = ({ mode = 'practice' }: { mode?: string }) => {
   const ModeIcon = mode === 'interview' ? Zap : Bot
   const accent = mode === 'interview' ? 'bg-red-500/20' : mode === 'concept' ? 'bg-emerald-500/20' : 'bg-blue-500/20'
   const dotColor = mode === 'interview' ? 'bg-red-400' : mode === 'concept' ? 'bg-emerald-400' : 'bg-blue-400'

@@ -2,7 +2,6 @@
 import { useUserStore } from '../stores/userStore'
 import { motion } from 'framer-motion'
 import {
-  Layers,
   ArrowRight,
   MonitorPlay,
   Zap,
