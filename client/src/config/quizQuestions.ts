@@ -4,7 +4,7 @@ export interface QuizQuestion {
   options: string[]
   correct: number
   explanation: string
-  difficulty: 'Easy' | 'Medium' | 'Hard'
+  difficulty?: 'Easy' | 'Medium' | 'Hard'
 }
 
 export const QUIZ_QUESTIONS: Record<string, QuizQuestion[]> = {
