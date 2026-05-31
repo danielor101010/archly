@@ -241,7 +241,18 @@ app.get('/api/users/:googleId', async (req: Request, res: Response) => {
         overall: r.score_overall, grade: r.score_grade },
     }))
 
-    res.json({ found: true, user: { ...user, quizProgress, sessionHistory } })
+    // Map snake_case DB fields to camelCase for the client
+    res.json({ found: true, user: {
+      level: user.level,
+      sessionsCompleted: user.sessions_completed,
+      totalTokensUsed: user.total_tokens_used,
+      streakDays: user.streak_days,
+      lastChallengeCompletedDate: user.last_challenge_date,
+      completedChallengeIds: user.completed_challenge_ids,
+      solvedProblems: user.solved_problems,
+      quizProgress,
+      sessionHistory,
+    } })
   } catch (err) {
     console.error('[DB] fetch user error:', err)
     res.status(500).json({ found: false })

@@ -132,7 +132,10 @@ export const useUserStore = create<UserState>()(
         setTimeout(() => get().syncToServer(), 0)
       },
 
-      setGoogleUser: ({ googleId, name, email, avatar }) => set({ googleId, name, email, avatar }),
+      setGoogleUser: ({ googleId, name, email, avatar }) => {
+        set({ googleId, name, email, avatar })
+        setTimeout(() => get().syncToServer(), 0)
+      },
 
       signOut: () => set({ name: '', googleId: undefined, email: undefined, avatar: undefined }),
 
