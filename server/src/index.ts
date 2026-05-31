@@ -355,10 +355,12 @@ app.post('/api/generate-quiz-questions', async (req: Request, res: Response) => 
     return
   }
 
-  // Return DB-cached questions if available
+  // Return DB-cached questions not already known to the client
   const cached = await getGeneratedQuestions(topicSlug)
-  if (cached.length > 0) {
-    res.json({ questions: cached })
+  const clientIds = new Set(existingIds ?? [])
+  const fresh = cached.filter(q => !clientIds.has(q.id))
+  if (fresh.length > 0) {
+    res.json({ questions: fresh })
     return
   }
 

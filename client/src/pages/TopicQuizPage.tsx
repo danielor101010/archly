@@ -102,12 +102,32 @@ export const TopicQuizPage = () => {
   const [generating, setGenerating] = useState(false)
   const [generateError, setGenerateError] = useState('')
 
+  // On mount, if localStorage was cleared, fetch cached questions from DB
+  useEffect(() => {
+    if (!slug) return
+    const local = loadGeneratedQuestions(slug)
+    if (local.length > 0) return  // already have them locally
+    fetch(apiUrl('/api/generate-quiz-questions'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topicSlug: slug, topicTitle, existingIds: [] }),
+    })
+      .then(r => r.json())
+      .then((data: { questions?: typeof allQuestions }) => {
+        if (data.questions?.length) {
+          saveGeneratedQuestions(slug, data.questions)
+          setExtraQuestions(shuffleQuestions(data.questions))
+        }
+      })
+      .catch(() => {})
+  }, [slug])
+
   const generateMore = useCallback(async () => {
     if (!slug || generating) return
     setGenerating(true)
     setGenerateError('')
     try {
-      const existingIds = [...(allQuestions ?? []), ...(extraQuestions ?? [])].map(q => q.id)
+      const existingIds = [...(allQuestions ?? []), ...(extraQuestions ?? []), ...loadGeneratedQuestions<{id:string}>(slug)].map(q => q.id)
       const resp = await fetch(apiUrl('/api/generate-quiz-questions'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
