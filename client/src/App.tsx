@@ -19,30 +19,33 @@ import { LanguageQuizPage } from './pages/LanguageQuizPage'
 import { CvInterviewPage } from './pages/CvInterviewPage'
 import { CodingInterviewPage } from './pages/CodingInterviewPage'
 import ModelingPage from './pages/ModelingPage'
+import { ProtectedRoute } from './components/ProtectedRoute'
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Landing />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/learn" element={<TopicList />} />
-        <Route path="/learn/:slug" element={<LearningRoom />} />
-        <Route path="/practice" element={<PracticeSetup />} />
-        <Route path="/practice/:problemId" element={<PracticeSession />} />
-        <Route path="/interview" element={<InterviewSetup />} />
-        <Route path="/interview/:problemId" element={<InterviewSession />} />
-        <Route path="/cv-analysis" element={<CvAnalysisPage />} />
-        <Route path="/quiz/:slug" element={<TopicQuizPage />} />
-        <Route path="/challenges" element={<ChallengesPage />} />
-        <Route path="/cv-interview" element={<CvInterviewPage />} />
-        <Route path="/coding-interview" element={<CodingInterviewPage />} />
-        <Route path="/modeling" element={<ModelingPage />} />
-        <Route path="/problem/:problemId" element={<ProblemDescriptionPage />} />
-        <Route path="/concept/:slug" element={<ConceptChatPage />} />
-        <Route path="/languages" element={<LanguagesPage />} />
-        <Route path="/problems" element={<AllProblemsPage />} />
-        <Route path="/languages/:slug" element={<LanguageQuizPage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/learn" element={<TopicList />} />
+          <Route path="/learn/:slug" element={<LearningRoom />} />
+          <Route path="/practice" element={<PracticeSetup />} />
+          <Route path="/practice/:problemId" element={<PracticeSession />} />
+          <Route path="/interview" element={<InterviewSetup />} />
+          <Route path="/interview/:problemId" element={<InterviewSession />} />
+          <Route path="/cv-analysis" element={<CvAnalysisPage />} />
+          <Route path="/quiz/:slug" element={<TopicQuizPage />} />
+          <Route path="/challenges" element={<ChallengesPage />} />
+          <Route path="/cv-interview" element={<CvInterviewPage />} />
+          <Route path="/coding-interview" element={<CodingInterviewPage />} />
+          <Route path="/modeling" element={<ModelingPage />} />
+          <Route path="/problem/:problemId" element={<ProblemDescriptionPage />} />
+          <Route path="/concept/:slug" element={<ConceptChatPage />} />
+          <Route path="/languages" element={<LanguagesPage />} />
+          <Route path="/problems" element={<AllProblemsPage />} />
+          <Route path="/languages/:slug" element={<LanguageQuizPage />} />
+        </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
