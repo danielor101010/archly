@@ -41,9 +41,16 @@ const PORT = Number(process.env.PORT) || 3001
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3000',
+  'https://project-08fnm.vercel.app',
   ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
 ]
-app.use(cors({ origin: ALLOWED_ORIGINS }))
+app.use(cors({ origin: (origin, cb) => {
+  if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) {
+    cb(null, true)
+  } else {
+    cb(new Error('Not allowed by CORS'))
+  }
+}}))
 app.use(express.json())
 
 // ── Health check ──────────────────────────────────────────────────────────────
