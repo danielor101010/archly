@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { ChevronDown, ChevronUp, Timer, X, User, Home, RotateCcw } from 'lucide-react'
+import { ChevronDown, ChevronUp, Timer, X, User, Home } from 'lucide-react'
 import { useSessionStore } from '../stores/sessionStore'
 import { useUserStore } from '../stores/userStore'
 import { useUIStore } from '../stores/uiStore'
@@ -56,16 +56,6 @@ export const SessionLayout = ({ mode }: SessionLayoutProps) => {
   const isDragging = useRef(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  // Only show the resume banner when: same problem ID as URL, existing session, and existing messages
-  const [showResumeBanner, setShowResumeBanner] = useState<boolean>(() => {
-    const state = useSessionStore.getState()
-    const chatState = useChatStore.getState()
-    return (
-      state.sessionId != null &&
-      chatState.messages.length > 0 &&
-      state.problemId === urlProblemId   // must be the same problem
-    )
-  })
 
   useEffect(() => {
     wsClient.connect()
@@ -114,33 +104,6 @@ export const SessionLayout = ({ mode }: SessionLayoutProps) => {
     navigate('/')
   }
 
-  const handleStartFresh = () => {
-    // Save before clearing
-    const savedProblemId = problemId
-    const savedMode = mode
-    const userLevel = useUserStore.getState().level
-
-    clearMessages()
-    clearGraph()
-    clearBoard()
-    clearSession()
-    useChatStore.getState().closeSolution()
-    setShowResumeBanner(false)
-
-    if (savedProblemId) {
-      // Restart the same problem without navigating away
-      useSessionStore.getState().startSession(savedMode, savedProblemId)
-      setTimeout(() => {
-        sendWS('CREATE_SESSION', { mode: savedMode, problemId: savedProblemId, userLevel })
-      }, 300)
-    } else {
-      navigate(savedMode === 'practice' ? '/practice' : '/interview')
-    }
-  }
-
-  const handleContinue = () => {
-    setShowResumeBanner(false)
-  }
 
   const modeColor = mode === 'interview' ? 'text-red-400' : 'text-blue-400'
   const modeBg = mode === 'interview' ? 'bg-red-500/10 border-red-500/20' : 'bg-blue-500/10 border-blue-500/20'
@@ -191,34 +154,6 @@ export const SessionLayout = ({ mode }: SessionLayoutProps) => {
         </div>
       </header>
 
-      {/* Resume banner */}
-      {showResumeBanner && sessionId && (
-        <div className="bg-indigo-950/60 border-b border-indigo-500/25 px-4 py-2.5 flex items-center justify-between shrink-0 gap-4">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${modeBg} ${modeColor}`}>
-              {mode === 'interview' ? 'INTERVIEW' : 'PRACTICE'}
-            </span>
-            <span className="text-zinc-400 text-xs">Resuming</span>
-            <span className="text-white text-sm font-semibold truncate">{problemName}</span>
-            <span className="text-zinc-600 text-xs shrink-0">{messages.length} messages</span>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleStartFresh}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/8 rounded-lg border border-white/10 transition-colors"
-            >
-              <RotateCcw size={11} />
-              Restart Problem
-            </button>
-            <button
-              onClick={handleContinue}
-              className="px-3 py-1.5 text-xs font-medium bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg transition-colors"
-            >
-              Continue →
-            </button>
-          </div>
-        </div>
-      )}
 
       {/* Main: Chat + Resizable Divider + Canvas */}
       <div ref={containerRef} className="flex flex-1 overflow-hidden">
