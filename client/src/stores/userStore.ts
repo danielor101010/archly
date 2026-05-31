@@ -49,6 +49,7 @@ export interface UserProfile {
 }
 
 interface UserState extends UserProfile {
+  _hydrated: boolean
   setName: (name: string) => void
   setLevel: (level: UserLevel) => void
   recordSession: (problemId: string) => void
@@ -69,6 +70,7 @@ interface UserState extends UserProfile {
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
+      _hydrated: false,
       name: '',
       level: 'junior',
       sessionsCompleted: 0,
@@ -200,6 +202,7 @@ export const useUserStore = create<UserState>()(
     }),
     {
       name: 'sdt-user',
+      onRehydrateStorage: () => (state) => { if (state) state._hydrated = true },
       partialize: (state) => ({
         name: state.name,
         level: state.level,
