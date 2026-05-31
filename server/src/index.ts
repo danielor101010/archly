@@ -5,6 +5,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
+import nodemailer from 'nodemailer'
 import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
@@ -233,10 +234,11 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
     return
   }
 
-  const apiKey = process.env.RESEND_API_KEY
-  if (!apiKey) {
-    console.warn('[Email] RESEND_API_KEY not set — welcome email skipped')
-    res.json({ ok: false, reason: 'no_api_key' })
+  const gmailUser = process.env.GMAIL_USER
+  const gmailPass = process.env.GMAIL_PASS
+  if (!gmailUser || !gmailPass) {
+    console.warn('[Email] GMAIL_USER / GMAIL_PASS not set — welcome email skipped')
+    res.json({ ok: false, reason: 'no_credentials' })
     return
   }
 
@@ -259,29 +261,23 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
   `
 
   try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: process.env.EMAIL_FROM ?? 'Archly <onboarding@resend.dev>',
-        to: email,
-        subject: `Welcome to Archly, ${name}!`,
-        html,
-      }),
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: gmailUser, pass: gmailPass },
     })
-    if (!resp.ok) {
-      const err = await resp.text()
-      console.error('[Email] Resend error:', err)
-      res.json({ ok: false, reason: 'send_failed' })
-      return
-    }
+    await transporter.sendMail({
+      from: `Archly <${gmailUser}>`,
+      to: email,
+      subject: `Welcome to Archly, ${name}!`,
+      html,
+    })
     // Only mark as welcomed after confirmed delivery
     persistedUsers.set(googleId, { ...(existing ?? {}), welcomed: true })
     saveUserStore()
     res.json({ ok: true })
   } catch (err) {
-    console.error('[Email] Network error:', err)
-    res.json({ ok: false, reason: 'network_error' })
+    console.error('[Email] Send error:', err)
+    res.json({ ok: false, reason: 'send_failed' })
   }
 })
 
