@@ -43,7 +43,7 @@ export const CvAnalysisPage = () => {
     setResult(null)
 
     try {
-      const res = await fetch('${apiUrl('/api/analyze-cv-gap')}', {
+      const res = await fetch(apiUrl('/api/analyze-cv-gap'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cvText, jobDescription }),

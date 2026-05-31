@@ -609,7 +609,7 @@ function ModelingCanvasInner() {
     setAiLoading(true)
     const { entities, relationships } = getModelData()
     try {
-      const response = await fetch('${apiUrl('/api/model-review')}', {
+      const response = await fetch(apiUrl('/api/model-review'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entities, relationships, userMessage }),

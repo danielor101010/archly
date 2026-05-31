@@ -99,7 +99,7 @@ export function GoogleSignIn({ onSuccess }: GoogleSignInProps) {
             .catch(() => {})
 
           // Server deduplicates — safe to call every sign-in, only sends once ever
-          fetch('${apiUrl('/api/send-welcome-email')}', {
+          fetch(apiUrl('/api/send-welcome-email'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ email: decoded.email, name: decoded.name, googleId: decoded.sub }),
