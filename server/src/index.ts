@@ -42,8 +42,6 @@ app.post('/api/auth/google', async (req: Request, res: Response) => {
   res.json({ token, ...user })
 })
 
-// ── Auth middleware — protects all /api/* routes below ───────────────────────
-app.use('/api', authenticate)
 
 // ── REST: Get session by ID ───────────────────────────────────────────────────
 app.get('/api/sessions/:id', (req: Request, res: Response) => {
