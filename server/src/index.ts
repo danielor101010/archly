@@ -8,6 +8,7 @@ import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
 import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
 import { verifyGoogleCredential, signToken, authenticate } from './auth.js'
+// verifyToken and AuthRequest available from auth.js when middleware is re-enabled
 
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
