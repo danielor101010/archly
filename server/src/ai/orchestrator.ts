@@ -88,7 +88,7 @@ export async function streamAIResponse(
 
   try {
     const stream = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages,
       max_tokens: 1024,
       stream: true,
@@ -140,7 +140,7 @@ ${edgeList || '  (none yet)'}
 In 2-3 sentences, explain the specific role of "${nodeLabel}" (${nodeType}) in THIS design — what calls it, what it calls next, and its key responsibility in this system. Be concrete about data flow, not generic.`
 
   const response = await client.chat.completions.create({
-    model: 'google/gemini-2.0-flash-001',
+    model: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 150,
     stream: false,
@@ -153,7 +153,7 @@ export async function analyzeCv(cvText: string, userLevel?: string): Promise<{ s
   const prompt = buildCvAnalysisPrompt(cvText, userLevel)
 
   const response = await client.chat.completions.create({
-    model: 'google/gemini-2.0-flash-001',
+    model: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 1500,
     stream: false,
@@ -181,7 +181,7 @@ export interface CvGapResult {
 export async function analyzeCvGap(cvText: string, jobDescription: string): Promise<CvGapResult> {
   const prompt = buildCvGapPrompt(cvText, jobDescription)
   const response = await client.chat.completions.create({
-    model: 'google/gemini-2.0-flash-001',
+    model: 'google/gemini-2.5-flash',
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 1500,
     stream: false,
@@ -209,7 +209,7 @@ export async function streamSolutionResponse(
 
   try {
     const stream = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 3000,
       stream: true,

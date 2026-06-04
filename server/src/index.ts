@@ -7,6 +7,7 @@ import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
 import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
+import { verifyGoogleCredential, signToken, authenticate } from './auth.js'
 
 const app = express()
 const PORT = Number(process.env.PORT) || 3001
@@ -30,6 +31,19 @@ app.use(express.json())
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
+
+// ── Auth: Exchange Google credential for server JWT ───────────────────────────
+app.post('/api/auth/google', async (req: Request, res: Response) => {
+  const { credential } = req.body as { credential?: string }
+  if (!credential) { res.status(400).json({ error: 'Missing credential' }); return }
+  const user = await verifyGoogleCredential(credential)
+  if (!user) { res.status(401).json({ error: 'Invalid Google token' }); return }
+  const token = signToken(user.googleId)
+  res.json({ token, ...user })
+})
+
+// ── Auth middleware — protects all /api/* routes below ───────────────────────
+app.use('/api', authenticate)
 
 // ── REST: Get session by ID ───────────────────────────────────────────────────
 app.get('/api/sessions/:id', (req: Request, res: Response) => {
@@ -133,7 +147,7 @@ Answer in 3-6 sentences. Be specific about the model the user provided — refer
       apiKey: process.env.OPENROUTER_API_KEY ?? '',
     })
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 600,
       stream: false,
@@ -164,7 +178,7 @@ Return ONLY valid JSON (no markdown):
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 300,
       stream: false,
@@ -394,7 +408,7 @@ Return ONLY valid JSON (no markdown):
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2500,
       stream: false,
@@ -469,7 +483,7 @@ Rules:
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 1200,
       stream: false,
@@ -536,7 +550,7 @@ Return ONLY valid JSON (no markdown):
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.0-flash-001',
+      model: 'google/gemini-2.5-flash',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 400,
       stream: false,
