@@ -1,4 +1,4 @@
-import { WS_URL } from './api'
+import { WS_URL, forceReSignIn } from './api'
 import { useChatStore } from '../stores/chatStore'
 import { useGraphStore } from '../stores/graphStore'
 import { useScoreStore } from '../stores/scoreStore'
@@ -13,21 +13,37 @@ class WSClient {
   private reconnectDelay = 1000
   private maxReconnectDelay = 30000
   private pingInterval: ReturnType<typeof setInterval> | null = null
-  private queue: string[] = []  // buffer messages until socket is open
+  private queue: string[] = []  // buffer app messages until AUTHed
   private streamBuf = ''        // buffer for stripping split canvas/board commands
+  private authed = false        // true only after the server replies AUTH_OK
+  private intentionalClose = false  // set when we close on AUTH_ERROR — suppresses reconnect
 
   connect() {
     if (this.ws?.readyState === WebSocket.OPEN || this.ws?.readyState === WebSocket.CONNECTING) return
+    // No token yet — do not open/spam the socket. Whoever signs the user in will call connect() again.
+    if (!useUserStore.getState().token) {
+      console.log('[WS] No auth token yet — deferring connection until sign-in')
+      return
+    }
 
+    this.authed = false
+    this.intentionalClose = false
     this.ws = new WebSocket(WS_URL)
 
     this.ws.onopen = () => {
-      console.log('[WS] Connected')
+      const token = useUserStore.getState().token
+      if (!token) {
+        // Token vanished between connect() and open — bail without authenticating.
+        this.intentionalClose = true
+        this.ws?.close()
+        return
+      }
+      console.log('[WS] Connected — authenticating')
       this.reconnectDelay = 1000
-      this.startPing()
-      // flush queued messages
-      this.queue.forEach(msg => this.ws!.send(msg))
-      this.queue = []
+      this.authed = false
+      // AUTH must be the FIRST frame; send it directly (bypassing the queue gate).
+      // The app-message queue stays buffered until the server replies AUTH_OK.
+      this.ws!.send(JSON.stringify({ type: 'AUTH', token }))
     }
 
     this.ws.onmessage = (event) => {
@@ -37,8 +53,15 @@ class WSClient {
     }
 
     this.ws.onclose = () => {
-      console.log('[WS] Disconnected, reconnecting in', this.reconnectDelay, 'ms')
       this.stopPing()
+      this.authed = false
+      if (this.intentionalClose) { this.intentionalClose = false; return }
+      // Nothing to re-auth with — wait for sign-in rather than spamming reconnects.
+      if (!useUserStore.getState().token) {
+        console.log('[WS] Disconnected with no token — waiting for sign-in')
+        return
+      }
+      console.log('[WS] Disconnected, reconnecting in', this.reconnectDelay, 'ms')
       setTimeout(() => {
         this.reconnectDelay = Math.min(this.reconnectDelay * 2, this.maxReconnectDelay)
         this.connect()
@@ -56,6 +79,23 @@ class WSClient {
     const boardStore = useBoardStore.getState()
 
     switch (msg.type) {
+      case 'AUTH_OK':
+        // Handshake complete — start ping and flush everything buffered during auth.
+        this.authed = true
+        this.reconnectDelay = 1000
+        this.startPing()
+        this.flushQueue()
+        break
+      case 'AUTH_ERROR':
+        // Token rejected — surface it, stop, and force re-sign-in.
+        console.error('[WS] Auth error:', msg.message)
+        this.authed = false
+        this.intentionalClose = true
+        this.stopPing()
+        this.ws?.close()
+        chatStore.addMessage({ role: 'assistant', content: '⚠️ Your session expired. Please sign in again.' })
+        forceReSignIn()
+        break
       case 'SESSION_CREATED':
         sessionStore.setSessionId(msg.sessionId as string)
         chatStore.addMessage({ role: 'assistant', content: msg.greeting as string })
@@ -175,19 +215,30 @@ class WSClient {
 
   send(type: string, payload?: Record<string, unknown>) {
     const msg = JSON.stringify({ type, ...payload })
-    if (this.ws?.readyState === WebSocket.OPEN) {
+    // Only send once the socket is open AND the AUTH handshake has completed.
+    if (this.ws?.readyState === WebSocket.OPEN && this.authed) {
       this.ws.send(msg)
     } else {
-      this.queue.push(msg)  // buffer until connected
+      this.queue.push(msg)  // buffer until AUTH_OK
+      // Kick off a connection if we have a token and aren't already connecting.
+      this.connect()
     }
   }
 
+  private flushQueue() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return
+    const pending = this.queue
+    this.queue = []
+    pending.forEach(msg => this.ws!.send(msg))
+  }
+
   private startPing() {
+    this.stopPing()  // never run two ping timers at once (e.g. after a reconnect)
     this.pingInterval = setInterval(() => this.send('PING'), 25000)
   }
 
   private stopPing() {
-    if (this.pingInterval) clearInterval(this.pingInterval)
+    if (this.pingInterval) { clearInterval(this.pingInterval); this.pingInterval = null }
   }
 }
 

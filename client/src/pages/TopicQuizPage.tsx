@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
-import { apiUrl } from '../lib/api'
+import { authFetch } from '../lib/api'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, MessageSquare, Zap, AlertTriangle, ArrowRightLeft, Lightbulb, Sparkles } from 'lucide-react'
@@ -107,7 +107,7 @@ export const TopicQuizPage = () => {
     if (!slug) return
     const local = loadGeneratedQuestions(slug)
     if (local.length > 0) return  // already have them locally
-    fetch(apiUrl('/api/generate-quiz-questions'), {
+    authFetch('/api/generate-quiz-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ topicSlug: slug, topicTitle, existingIds: [] }),
@@ -128,7 +128,7 @@ export const TopicQuizPage = () => {
     setGenerateError('')
     try {
       const existingIds = [...(allQuestions ?? []), ...(extraQuestions ?? []), ...loadGeneratedQuestions<{id:string}>(slug)].map(q => q.id)
-      const resp = await fetch(apiUrl('/api/generate-quiz-questions'), {
+      const resp = await authFetch('/api/generate-quiz-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ topicSlug: slug, topicTitle, existingIds }),

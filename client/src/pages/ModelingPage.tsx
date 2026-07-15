@@ -1,5 +1,5 @@
 ﻿import { useState, useCallback, useRef, useEffect } from 'react'
-import { apiUrl } from '../lib/api'
+import { authFetch } from '../lib/api'
 import { useNavigate } from 'react-router-dom'
 import ReactFlow, {
   Background,
@@ -609,7 +609,7 @@ function ModelingCanvasInner() {
     setAiLoading(true)
     const { entities, relationships } = getModelData()
     try {
-      const response = await fetch(apiUrl('/api/model-review'), {
+      const response = await authFetch('/api/model-review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entities, relationships, userMessage }),

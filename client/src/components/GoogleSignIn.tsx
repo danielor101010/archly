@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { apiUrl } from '../lib/api'
+import { apiUrl, authFetch } from '../lib/api'
 import { useUserStore } from '../stores/userStore'
 
 // Minimal typings for the Google Identity Services SDK loaded via CDN
@@ -27,25 +27,13 @@ declare global {
   }
 }
 
-interface DecodedGoogleJwt {
-  sub: string
-  name: string
+/** Shape returned by `POST /api/auth/google`. */
+interface AuthResponse {
+  token: string
+  googleId: string
   email: string
-  picture: string
-  [key: string]: unknown
-}
-
-function decodeGoogleJwt(credential: string): DecodedGoogleJwt | null {
-  try {
-    const parts = credential.split('.')
-    if (parts.length !== 3) return null
-    // Base64url → Base64 → JSON
-    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/')
-    const json = atob(payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), '='))
-    return JSON.parse(json) as DecodedGoogleJwt
-  } catch {
-    return null
-  }
+  name: string
+  avatar: string
 }
 
 interface GoogleSignInProps {
@@ -73,23 +61,41 @@ export function GoogleSignIn({ onSuccess }: GoogleSignInProps) {
 
       window.google.accounts.id.initialize({
         client_id: clientId,
-        callback: (response) => {
-          const decoded = decodeGoogleJwt(response.credential)
-          if (!decoded) {
-            console.error('[GoogleSignIn] Failed to decode JWT credential.')
+        callback: async (response) => {
+          // Exchange the Google credential for a server-issued auth token.
+          // This is the ONLY call that must not carry an Authorization header.
+          let auth: AuthResponse
+          try {
+            const res = await fetch(apiUrl('/api/auth/google'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: response.credential }),
+            })
+            if (!res.ok) {
+              console.error('[GoogleSignIn] Sign-in failed:', res.status)
+              return
+            }
+            auth = await res.json() as AuthResponse
+          } catch (err) {
+            console.error('[GoogleSignIn] Sign-in request failed:', err)
             return
           }
+
+          // Store user + token (persisted). Token must be set before the calls below,
+          // since authFetch reads it live from userStore.
           setGoogleUser({
-            googleId: decoded.sub,
-            name: decoded.name,
-            email: decoded.email,
-            avatar: decoded.picture,
+            token: auth.token,
+            googleId: auth.googleId,
+            name: auth.name,
+            email: auth.email,
+            avatar: auth.avatar,
           })
 
-          // Restore saved progress from server (survives localStorage clears)
-          fetch(`${apiUrl(`/api/users/${decoded.sub}`)}`)
+          // Restore saved progress from server (survives localStorage clears).
+          // Identity comes from the token, so hit GET /api/me.
+          authFetch('/api/me')
             .then(r => r.json())
-            .then((data: { found: boolean; user?: Record<string, unknown> }) => {
+            .then((data: { found?: boolean; user?: Record<string, unknown> }) => {
               if (data.found && data.user) {
                 useUserStore.getState().restoreProgress(data.user as never)
               }
@@ -97,11 +103,11 @@ export function GoogleSignIn({ onSuccess }: GoogleSignInProps) {
             .catch(() => {})
 
           // Server deduplicates — safe to call every sign-in, only sends once ever
-          fetch(apiUrl('/api/send-welcome-email'), {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ email: decoded.email, name: decoded.name, googleId: decoded.sub }),
-            }).catch(() => {})
+          authFetch('/api/send-welcome-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: auth.email, name: auth.name }),
+          }).catch(() => {})
           onSuccess?.()
         },
         auto_select: false,

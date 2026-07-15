@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiUrl } from '../lib/api'
+import { authFetch } from '../lib/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, FileSearch, Loader2, CheckCircle2, XCircle, ListChecks, BookMarked } from 'lucide-react'
 
@@ -43,7 +43,7 @@ export const CvAnalysisPage = () => {
     setResult(null)
 
     try {
-      const res = await fetch(apiUrl('/api/analyze-cv-gap'), {
+      const res = await authFetch('/api/analyze-cv-gap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cvText, jobDescription }),

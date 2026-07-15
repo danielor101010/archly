@@ -7,7 +7,7 @@ import { TOPICS } from '../../config/topics'
 import { LANGUAGES } from '../../config/languages'
 import { useUserStore } from '../../stores/userStore'
 import { GoogleSignIn } from '../../components/GoogleSignIn'
-import { apiUrl } from '../../lib/api'
+import { authFetch } from '../../lib/api'
 
 const diffColor: Record<string, string> = {
   Easy:   'text-green-400 bg-green-400/10 border-green-400/20',
@@ -93,7 +93,7 @@ export const PracticeSetup = () => {
     if (!input.trim() || input.trim().length < 3) { setSuggestions([]); return }
     setSuggesting(true)
     try {
-      const resp = await fetch(apiUrl('/api/suggest-systems'), {
+      const resp = await authFetch('/api/suggest-systems', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input }),
