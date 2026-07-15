@@ -1,30 +1,124 @@
-/* ── Theme tokens ─────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════════════
+   THEME TOKENS
+   ════════════════════════════════════════════════════════════════════════
+   Two layers live here:
+
+   1. Legacy raw-color tokens (--c-bg-*) — back the `page` / `card` /
+      `card-dark` Tailwind colors. Still the source of truth for page/card
+      backgrounds; left as-is.
+
+   2. SEMANTIC DESIGN TOKENS (--text-*, --surface*, --border-*, --accent*)
+      — the design-system layer this app is migrating to. Each is defined
+      once per theme below (dark in :root, light in .light) and wired into
+      tailwind.config.js `theme.extend.colors` under matching names, so
+      components can consume them as ordinary utility classes:
+
+        --text-primary      -> text-text-primary      (replaces text-white / text-zinc-100)
+        --text-secondary    -> text-text-secondary     (replaces text-zinc-300)
+        --text-muted        -> text-text-muted         (replaces text-zinc-400)
+        --text-subtle       -> text-text-subtle        (replaces text-zinc-500 / -600)
+        --surface           -> bg-surface              (alias of bg-card)
+        --surface-elevated  -> bg-surface-elevated     (modals/popups/raised panels)
+        --surface-sunken    -> bg-surface-sunken       (alias of bg-page)
+        --border-subtle     -> border-border-subtle    (replaces border-white/[0.06-0.08])
+        --border-default    -> border-border-default   (replaces border-white/[0.10-0.12])
+        --border-strong     -> border-border-strong    (replaces border-white/[0.16-0.20])
+        --accent            -> bg-accent / text-accent / border-accent (replaces indigo-500)
+        --accent-hover      -> bg-accent-hover / etc.  (replaces indigo-600 hover states)
+
+      MIGRATION PATH: components today hardcode Tailwind's stock palette
+      directly (text-zinc-400, border-white/10, bg-indigo-500, ...). As a
+      component is touched, swap those raw utilities for the semantic ones
+      above. Values are chosen to render pixel-identical to what's on
+      screen today (they mirror the .light override wall further down), so
+      migrating a component is visually a no-op — until the tokens
+      themselves are intentionally changed, which is the entire point: a
+      future redesign becomes an edit to this file instead of a
+      find-and-replace across every component.
+   ════════════════════════════════════════════════════════════════════════ */
 :root {
+  /* Legacy raw-color tokens */
   --c-bg-page:      #0A0A0F;
   --c-bg-card:      #111116;
   --c-bg-card-dark: #0e0e16;
+
+  /* Semantic tokens — dark theme (default) */
+  --text-primary:     #f4f4f5; /* zinc-100 — matches base body text color below */
+  --text-secondary:   #d4d4d8; /* zinc-300 */
+  --text-muted:       #a1a1aa; /* zinc-400 */
+  --text-subtle:      #71717a; /* zinc-500 */
+
+  --surface:          var(--c-bg-card);  /* #111116 */
+  --surface-elevated: #18181f;           /* raised panels/modals (matches bg.elevated) */
+  --surface-sunken:   var(--c-bg-page);  /* #0A0A0F */
+
+  --border-subtle:    rgba(255,255,255,0.06);
+  --border-default:   rgba(255,255,255,0.12);
+  --border-strong:    rgba(255,255,255,0.2);
+
+  --accent:           #6366f1; /* indigo-500 */
+  --accent-hover:     #4f46e5; /* indigo-600 */
 }
 
 .light {
+  /* Legacy raw-color tokens */
   --c-bg-page:      #f1f5f9;
   --c-bg-card:      #ffffff;
   --c-bg-card-dark: #f0f4f8;
+
+  /* Semantic tokens — light theme. Values match the .light override wall below 1:1. */
+  --text-primary:     #0f172a; /* slate-900 */
+  --text-secondary:   #334155; /* slate-700 */
+  --text-muted:       #475569; /* slate-600 */
+  --text-subtle:      #64748b; /* slate-500 */
+
+  --surface:          var(--c-bg-card);  /* #ffffff */
+  --surface-elevated: #ffffff;           /* popups/modals */
+  --surface-sunken:   var(--c-bg-page);  /* #f1f5f9 */
+
+  --border-subtle:    rgba(0,0,0,0.10);
+  --border-default:   rgba(0,0,0,0.16);
+  --border-strong:    rgba(0,0,0,0.20);
+
+  --accent:           #4f46e5; /* indigo-600 — darkened for contrast on white */
+  --accent-hover:     #4338ca; /* indigo-700 */
 }
 
-/* Light mode text overrides — shift all "400" tones to "600/700" so they're readable on white */
+/* ════════════════════════════════════════════════════════════════════════
+   LIGHT-MODE COMPATIBILITY SHIM  —  TEMPORARY, SHOULD ONLY SHRINK
+   ════════════════════════════════════════════════════════════════════════
+   Most components hardcode Tailwind's stock dark-palette utility classes
+   directly (text-zinc-400, border-white/10, bg-white/5, ...) instead of
+   the semantic tokens defined above. Because dark is the default theme
+   (:root), those raw utilities already look correct in dark mode with no
+   extra work — but they need remapping for light mode, and that
+   remapping lives in this block, keyed off the `.light` class.
 
-/* Neutral */
-.light .text-white    { color: #0f172a !important; }
+   This is a stopgap, not a design system: every rule here is a component
+   that hasn't been migrated yet. When a component is touched, replace its
+   raw utility (e.g. `text-zinc-400`) with the matching semantic token
+   class (e.g. `text-text-muted`) — the semantic token already flips
+   correctly via the `.light` block above, so the override below becomes
+   dead and can be deleted. Do not add new rules here for new components;
+   give them semantic token classes instead. Rules that already have an
+   equivalent semantic token reference the CSS variable directly (so the
+   token stays the single source of truth); rules with no matching token
+   are left as literal colors and are exactly the ones future migrations
+   should eliminate.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── Text — neutral (white/zinc) ─────────────────────────────────────── */
+.light .text-white    { color: var(--text-primary) !important; }
 .light .text-zinc-100 { color: #1e293b !important; }
 .light .text-zinc-200 { color: #1e293b !important; }
-.light .text-zinc-300 { color: #334155 !important; }
-.light .text-zinc-400 { color: #475569 !important; }
-.light .text-zinc-500 { color: #64748b !important; }
+.light .text-zinc-300 { color: var(--text-secondary) !important; }
+.light .text-zinc-400 { color: var(--text-muted) !important; }
+.light .text-zinc-500 { color: var(--text-subtle) !important; }
 .light .text-zinc-600 { color: #94a3b8 !important; }
 .light .text-zinc-700 { color: #94a3b8 !important; }
 
-/* Accent colors — 400→600, 300→500 for readability on white */
-.light .text-indigo-400  { color: #4f46e5 !important; }
+/* ── Text — accent colors (400→600, 300→500 for readability on white) ── */
+.light .text-indigo-400  { color: var(--accent) !important; }
 .light .text-indigo-300  { color: #6366f1 !important; }
 .light .text-purple-400  { color: #7c3aed !important; }
 .light .text-purple-300  { color: #8b5cf6 !important; }
@@ -46,12 +140,12 @@
 .light .text-red-400     { color: #dc2626 !important; }
 .light .text-red-300     { color: #ef4444 !important; }
 
-/* Light mode scrollbar */
+/* ── Scrollbar ────────────────────────────────────────────────────────── */
 .light ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12) !important; }
 .light ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.22) !important; }
 
-/* Light mode global body text */
-.light body { color: #0f172a; }
+/* ── Global body text ─────────────────────────────────────────────────── */
+.light body { color: var(--text-primary); }
 
 /* Strip browser UA default white background from all form elements */
 input, textarea, select {
@@ -59,17 +153,17 @@ input, textarea, select {
   color: inherit;
 }
 
-/* Light mode inputs and textareas */
+/* ── Inputs and textareas ────────────────────────────────────────────── */
 .light input,
 .light textarea,
 .light select {
-  color: #0f172a !important;
+  color: var(--text-primary) !important;
   background-color: var(--c-bg-page) !important;
 }
 .light input::placeholder,
 .light textarea::placeholder { color: #9ca3af !important; }
 
-/* Light mode border overrides — both shorthand and arbitrary-value variants */
+/* ── Borders — white/N opacity → black/N opacity (shorthand + arbitrary) ─ */
 .light .border-white\/8,
 .light .border-white\/\[0\.08\] { border-color: rgba(0,0,0,0.12) !important; }
 
@@ -77,21 +171,21 @@ input, textarea, select {
 .light .border-white\/\[0\.10\] { border-color: rgba(0,0,0,0.14) !important; }
 
 .light .border-white\/12,
-.light .border-white\/\[0\.12\] { border-color: rgba(0,0,0,0.16) !important; }
+.light .border-white\/\[0\.12\] { border-color: var(--border-default) !important; }
 
 .light .border-white\/16,
 .light .border-white\/\[0\.16\] { border-color: rgba(0,0,0,0.18) !important; }
 
 .light .border-white\/20,
-.light .border-white\/\[0\.20\] { border-color: rgba(0,0,0,0.20) !important; }
+.light .border-white\/\[0\.20\] { border-color: var(--border-strong) !important; }
 
-.light .border-white\/\[0\.06\] { border-color: rgba(0,0,0,0.10) !important; }
+.light .border-white\/\[0\.06\] { border-color: var(--border-subtle) !important; }
 .light .border-white\/\[0\.18\] { border-color: rgba(0,0,0,0.18) !important; }
 .light .border-white\/\[0\.25\] { border-color: rgba(0,0,0,0.22) !important; }
 .light .border-white\/25,
 .light .border-white\/30       { border-color: rgba(0,0,0,0.22) !important; }
 
-/* Accent border colors — make them more visible on white backgrounds */
+/* ── Accent border colors — make them more visible on white backgrounds ─ */
 .light .border-indigo-500\/20 { border-color: rgba(79,70,229,0.40) !important; }
 .light .border-indigo-500\/25 { border-color: rgba(79,70,229,0.45) !important; }
 .light .border-indigo-500\/30 { border-color: rgba(79,70,229,0.50) !important; }
@@ -108,12 +202,13 @@ input, textarea, select {
 .light .border-orange-500\/20 { border-color: rgba(194,65,12,0.40) !important; }
 .light .border-amber-500\/25  { border-color: rgba(180,83,9,0.40)  !important; }
 
-/* Hover border overrides */
+/* ── Hover border overrides ──────────────────────────────────────────── */
 .light .hover\:border-white\/\[0\.18\]:hover { border-color: rgba(0,0,0,0.22) !important; }
 .light .hover\:border-white\/\[0\.25\]:hover { border-color: rgba(0,0,0,0.28) !important; }
 .light .hover\:border-white\/25:hover        { border-color: rgba(0,0,0,0.28) !important; }
 
-/* Popups and modals — add visible shadow + border so they stand out on light bg */
+/* ── Popups and modals — visible shadow + border so they stand out ──────
+   on a light background ─────────────────────────────────────────────── */
 .light .shadow-2xl {
   box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 0 0 1px rgba(0,0,0,0.09) !important;
 }
@@ -121,20 +216,20 @@ input, textarea, select {
   box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.07) !important;
 }
 
-/* Popup/modal backgrounds — slightly off-white to separate from page */
+/* Popup/modal backgrounds — off-white surface to separate from page */
 .light [class*="rounded"][class*="shadow-2xl"],
 .light [class*="rounded"][class*="shadow-xl"] {
-  background-color: #ffffff;
+  background-color: var(--surface-elevated);
 }
 
-/* Override dark gradient cards (ChallengesPage) to light versions */
+/* ── Gradient cards (ChallengesPage) — dark gradients to light versions ─ */
 .light .from-indigo-900\/40 { --tw-gradient-from: rgba(99,102,241,0.12) !important; }
 .light .via-indigo-800\/20  { --tw-gradient-via:  rgba(99,102,241,0.06) !important; }
 .light .from-violet-900\/40 { --tw-gradient-from: rgba(139,92,246,0.12) !important; }
 .light .via-violet-800\/20  { --tw-gradient-via:  rgba(139,92,246,0.06) !important; }
 .light .to-gray-900\/60     { --tw-gradient-to:   rgba(0,0,0,0.04)       !important; }
 
-/* Light mode bg-white/N overrides — flip white opacity to black opacity */
+/* ── bg-white/N overrides — flip white opacity to black opacity ─────────── */
 .light .bg-white\/4  { background-color: rgba(0,0,0,0.04) !important; }
 .light .bg-white\/5  { background-color: rgba(0,0,0,0.05) !important; }
 .light .bg-white\/8  { background-color: rgba(0,0,0,0.08) !important; }
@@ -144,7 +239,7 @@ input, textarea, select {
 .light .bg-white\/\[0\.02\] { background-color: rgba(0,0,0,0.02) !important; }
 .light .bg-white\/\[0\.03\] { background-color: rgba(0,0,0,0.03) !important; }
 
-/* Light mode hover overrides — prevent dark-mode hover flashes */
+/* ── Hover overrides — prevent dark-mode hover flashes ───────────────── */
 .light .hover\:bg-white\/5:hover  { background-color: rgba(0,0,0,0.05) !important; }
 .light .hover\:bg-white\/8:hover  { background-color: rgba(0,0,0,0.08) !important; }
 .light .hover\:bg-white\/10:hover { background-color: rgba(0,0,0,0.10) !important; }
@@ -153,12 +248,8 @@ input, textarea, select {
 .light .hover\:bg-white\/\[0\.05\]:hover { background-color: rgba(0,0,0,0.05) !important; }
 .light .hover\:bg-card:hover { background-color: #f8fafc !important; }
 
-/* Placeholder text in light mode */
-.light input::placeholder,
-.light textarea::placeholder { color: #9ca3af !important; }
-
-/* ReactFlow canvas background */
-.light .react-flow__background { background: #f1f5f9 !important; }
+/* ── ReactFlow canvas background ─────────────────────────────────────── */
+.light .react-flow__background { background: var(--c-bg-page) !important; }
 
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
