@@ -1,16 +1,30 @@
 import { Session, GraphNode, GraphEdge, Message } from './types.js'
 import { v4 as uuidv4 } from 'uuid'
+import { config } from './config.js'
+import { LIMITS } from './security/limits.js'
+
+const SWEEP_INTERVAL_MS = 10 * 60 * 1000 // evict stale sessions every 10 minutes
 
 class SessionStore {
   private sessions = new Map<string, Session>()
 
-  create(mode: Session['mode'], problemId: string, userLevel?: string, customProblem?: { title: string; description: string }): Session {
+  constructor() {
+    // Periodically evict sessions idle longer than the configured TTL so the
+    // in-memory Map cannot grow forever (memory-leak guard).
+    const timer = setInterval(() => this.sweep(), SWEEP_INTERVAL_MS)
+    if (typeof timer.unref === 'function') timer.unref()
+  }
+
+  create(ownerId: string, mode: Session['mode'], problemId: string, userLevel?: string, customProblem?: { title: string; description: string }): Session {
+    const now = Date.now()
     const session: Session = {
       id: uuidv4(),
       mode,
       problemId,
       userLevel,
-      startedAt: Date.now(),
+      ownerId,
+      startedAt: now,
+      lastActivity: now,
       messages: [],
       graph: { nodes: {}, edges: {} },
       scores: {
@@ -33,22 +47,44 @@ class SessionStore {
     return this.sessions.get(id)
   }
 
+  /** Fetch a session only if it is owned by `ownerId`; otherwise undefined. */
+  getOwned(id: string, ownerId: string): Session | undefined {
+    const session = this.sessions.get(id)
+    if (!session || session.ownerId !== ownerId) return undefined
+    return session
+  }
+
+  private touch(session: Session): void {
+    session.lastActivity = Date.now()
+  }
+
   addMessage(sessionId: string, msg: Omit<Message, 'id' | 'timestamp'>): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
     session.messages.push({ ...msg, id: uuidv4(), timestamp: Date.now() })
+    this.touch(session)
   }
 
-  addNode(sessionId: string, node: GraphNode): void {
+  /** Adds a node unless the per-session cap is reached. Returns whether it was added. */
+  addNode(sessionId: string, node: GraphNode): boolean {
     const session = this.sessions.get(sessionId)
-    if (!session) return
+    if (!session) return false
+    const isNew = !(node.id in session.graph.nodes)
+    if (isNew && Object.keys(session.graph.nodes).length >= LIMITS.maxNodes) return false
     session.graph.nodes[node.id] = node
+    this.touch(session)
+    return true
   }
 
-  addEdge(sessionId: string, edge: GraphEdge): void {
+  /** Adds an edge unless the per-session cap is reached. Returns whether it was added. */
+  addEdge(sessionId: string, edge: GraphEdge): boolean {
     const session = this.sessions.get(sessionId)
-    if (!session) return
+    if (!session) return false
+    const isNew = !(edge.id in session.graph.edges)
+    if (isNew && Object.keys(session.graph.edges).length >= LIMITS.maxEdges) return false
     session.graph.edges[edge.id] = edge
+    this.touch(session)
+    return true
   }
 
   removeNode(sessionId: string, nodeId: string): void {
@@ -61,6 +97,7 @@ class SessionStore {
         delete session.graph.edges[edgeId]
       }
     }
+    this.touch(session)
   }
 
   updateNodeHealth(sessionId: string, nodeId: string, health: GraphNode['health']): void {
@@ -68,6 +105,15 @@ class SessionStore {
     if (!session) return
     if (session.graph.nodes[nodeId]) {
       session.graph.nodes[nodeId].health = health
+      this.touch(session)
+    }
+  }
+
+  /** Evicts sessions whose last activity is older than the configured TTL. */
+  private sweep(): void {
+    const cutoff = Date.now() - config.sessionTtlMs
+    for (const [id, session] of this.sessions) {
+      if (session.lastActivity < cutoff) this.sessions.delete(id)
     }
   }
 

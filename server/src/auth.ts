@@ -1,9 +1,11 @@
 import { OAuth2Client } from 'google-auth-library'
 import { createHmac, timingSafeEqual } from 'crypto'
 import type { Request, Response, NextFunction } from 'express'
+import { config } from './config.js'
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID)
-const SECRET = process.env.JWT_SECRET ?? 'dev-secret-change-in-prod'
+const googleClient = new OAuth2Client(config.googleClientId)
+// Secret comes from validated config — boot fails fast if it is missing or the dev default.
+const SECRET = config.jwtSecret
 
 // Simple signed token: base64(payload).base64(hmac)
 function b64(s: string) { return Buffer.from(s).toString('base64url') }
@@ -31,7 +33,7 @@ export async function verifyGoogleCredential(credential: string): Promise<{ goog
   try {
     const ticket = await googleClient.verifyIdToken({
       idToken: credential,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: config.googleClientId,
     })
     const p = ticket.getPayload()
     if (!p?.sub) return null

@@ -53,7 +53,9 @@ export interface Session {
   mode: SessionMode
   problemId: string
   userLevel?: string
+  ownerId: string
   startedAt: number
+  lastActivity: number
   messages: Message[]
   graph: {
     nodes: Record<string, GraphNode>
@@ -88,6 +90,7 @@ export interface BoardCommand {
 
 // WebSocket message types
 export type WSClientMessage =
+  | { type: 'AUTH'; token: string }
   | { type: 'CREATE_SESSION'; mode: SessionMode; problemId: string; userLevel?: string; customProblem?: { title: string; description: string } }
   | { type: 'USER_MESSAGE'; sessionId: string; content: string }
   | { type: 'REQUEST_HINT'; sessionId: string }
@@ -98,6 +101,8 @@ export type WSClientMessage =
   | { type: 'PING' }
 
 export type WSServerMessage =
+  | { type: 'AUTH_OK' }
+  | { type: 'AUTH_ERROR'; message?: string }
   | { type: 'SESSION_CREATED'; sessionId: string; greeting: string; problemId: string }
   | { type: 'AI_STREAM_CHUNK'; delta: string }
   | { type: 'AI_STREAM_END'; cleanText: string; boardCommands?: BoardCommand[] }

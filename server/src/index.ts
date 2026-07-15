@@ -1,40 +1,67 @@
 import 'dotenv/config'
-import express, { Request, Response } from 'express'
+import { config } from './config.js'
+import express, { Request, Response, NextFunction } from 'express'
 import cors from 'cors'
+import helmet from 'helmet'
 import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
 import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
-import { verifyGoogleCredential, signToken, authenticate } from './auth.js'
-// verifyToken and AuthRequest available from auth.js when middleware is re-enabled
+import { verifyGoogleCredential, signToken, authenticate, AuthRequest } from './auth.js'
+import { llmRateLimit, authIpRateLimit } from './security/rateLimiter.js'
+import { isOverDailyBudget, recordSpend, FRIENDLY_CAPACITY_MESSAGE } from './security/costTracker.js'
+import { LIMITS, tooLong } from './security/limits.js'
 
 const app = express()
-const PORT = Number(process.env.PORT) || 3001
+const PORT = config.port
 
+// Behind a reverse proxy (Docker/Vercel) — trust it so req.ip reflects the real client.
+app.set('trust proxy', 1)
+
+// ── Security headers ────────────────────────────────────────────────────────────
+// Cross-origin resource policy relaxed so the browser client (different origin)
+// can read JSON responses; CORS below still governs which origins are allowed.
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }))
+
+// ── CORS: exact-origin allowlist only (no wildcards) ────────────────────────────
 const ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://localhost:3000',
-  'https://project-08fnm.vercel.app',
-  ...(process.env.CLIENT_URL ? [process.env.CLIENT_URL] : []),
+  ...(config.clientUrl ? [config.clientUrl] : []),
 ]
 app.use(cors({ origin: (origin, cb) => {
-  if (!origin || ALLOWED_ORIGINS.includes(origin) || origin.endsWith('.vercel.app')) {
+  // Allow same-origin / non-browser callers (no Origin header) and exact matches only.
+  if (!origin || ALLOWED_ORIGINS.includes(origin)) {
     cb(null, true)
   } else {
     cb(new Error('Not allowed by CORS'))
   }
 }}))
-app.use(express.json())
+app.use(express.json({ limit: '100kb' }))
 
-// ── Health check ──────────────────────────────────────────────────────────────
+// ── Auth: require a valid Bearer token on every /api route ──────────────────────
+// The `authenticate` middleware allowlists `/auth/google` (mounted here as
+// `/api/auth/google`). `/health` lives outside `/api` so it stays public.
+app.use('/api', authenticate)
+
+// ── Cost circuit breaker for LLM REST endpoints ─────────────────────────────────
+function costBreaker(_req: Request, res: Response, next: NextFunction): void {
+  if (isOverDailyBudget()) {
+    res.status(503).json({ error: FRIENDLY_CAPACITY_MESSAGE })
+    return
+  }
+  next()
+}
+
+// ── Health check (public) ───────────────────────────────────────────────────────
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
-// ── Auth: Exchange Google credential for server JWT ───────────────────────────
-app.post('/api/auth/google', async (req: Request, res: Response) => {
+// ── Auth: Exchange Google credential for server JWT (public, IP rate-limited) ────
+app.post('/api/auth/google', authIpRateLimit, async (req: Request, res: Response) => {
   const { credential } = req.body as { credential?: string }
   if (!credential) { res.status(400).json({ error: 'Missing credential' }); return }
   const user = await verifyGoogleCredential(credential)
@@ -44,10 +71,11 @@ app.post('/api/auth/google', async (req: Request, res: Response) => {
 })
 
 
-// ── REST: Get session by ID ───────────────────────────────────────────────────
+// ── REST: Get session by ID (must be owned by the caller) ───────────────────────
 app.get('/api/sessions/:id', (req: Request, res: Response) => {
+  const googleId = (req as AuthRequest).googleId
   const session = sessionStore.get(String(req.params.id))
-  if (!session) {
+  if (!session || session.ownerId !== googleId) {
     res.status(404).json({ error: 'Not found' })
     return
   }
@@ -96,14 +124,19 @@ app.get('/api/problems', (_req: Request, res: Response) => {
 })
 
 // ── REST: CV gap analysis ─────────────────────────────────────────────────────
-app.post('/api/analyze-cv-gap', async (req: Request, res: Response) => {
+app.post('/api/analyze-cv-gap', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { cvText, jobDescription } = req.body
   if (!cvText || !jobDescription) {
     res.status(400).json({ error: 'cvText and jobDescription are required' })
     return
   }
+  if (tooLong(cvText, LIMITS.cvText) || tooLong(jobDescription, LIMITS.jobDescription)) {
+    res.status(413).json({ error: 'Input too long' })
+    return
+  }
   try {
     const result = await analyzeCvGap(cvText as string, jobDescription as string)
+    recordSpend(String(cvText).length + String(jobDescription).length, JSON.stringify(result).length)
     res.json(result)
   } catch (err) {
     console.error('[API] CV gap error:', err)
@@ -112,11 +145,19 @@ app.post('/api/analyze-cv-gap', async (req: Request, res: Response) => {
 })
 
 // ── REST: Data model review ───────────────────────────────────────────────────
-app.post('/api/model-review', async (req: Request, res: Response) => {
+app.post('/api/model-review', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { entities, relationships, userMessage } = req.body as {
     entities: Array<{ name: string; fields: Array<{ name: string; type: string }> }>
     relationships: Array<{ from: string; to: string; label: string }>
     userMessage: string
+  }
+  if (!Array.isArray(entities) || !Array.isArray(relationships)) {
+    res.status(400).json({ reply: 'entities and relationships are required' })
+    return
+  }
+  if (tooLong(userMessage, LIMITS.userMessage) || entities.length > LIMITS.maxNodes) {
+    res.status(413).json({ reply: 'Input too long' })
+    return
   }
 
   const entityList = entities.map(e =>
@@ -152,6 +193,7 @@ Answer in 3-6 sentences. Be specific about the model the user provided — refer
       stream: false,
     })
     const reply = completion.choices[0]?.message?.content?.trim() ?? 'No response.'
+    recordSpend(prompt.length, reply.length)
     res.json({ reply })
   } catch (err) {
     console.error('[API] Model review error:', err)
@@ -160,9 +202,10 @@ Answer in 3-6 sentences. Be specific about the model the user provided — refer
 })
 
 // ── REST: AI system design suggestions ───────────────────────────────────────
-app.post('/api/suggest-systems', async (req: Request, res: Response) => {
+app.post('/api/suggest-systems', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { input } = req.body as { input?: string }
   if (!input?.trim()) { res.status(400).json({ suggestions: [] }); return }
+  if (tooLong(input, LIMITS.suggestInput)) { res.status(413).json({ suggestions: [] }); return }
 
   const prompt = `A user is designing their own system. They have typed: "${input.trim()}"
 
@@ -183,6 +226,7 @@ Return ONLY valid JSON (no markdown):
       stream: false,
     })
     const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+    recordSpend(prompt.length, raw.length)
     const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(clean)
     res.json({ suggestions: parsed.suggestions ?? [] })
@@ -193,17 +237,19 @@ Return ONLY valid JSON (no markdown):
 
 // ── User progress sync ────────────────────────────────────────────────────────
 app.post('/api/users/sync', async (req: Request, res: Response) => {
-  const { googleId, name, email, avatar, level, sessionsCompleted, totalTokensUsed,
+  // Identity ALWAYS comes from the verified token — any googleId in the body is ignored.
+  const googleId = (req as AuthRequest).googleId
+  const { name, email, avatar, level, sessionsCompleted, totalTokensUsed,
     streakDays, lastChallengeDate, completedChallengeIds, solvedProblems, createdAt,
     quizProgress, sessionHistory } = req.body as {
-    googleId?: string; name?: string; email?: string; avatar?: string
+    name?: string; email?: string; avatar?: string
     level?: string; sessionsCompleted?: number; totalTokensUsed?: number
     streakDays?: number; lastChallengeDate?: string; completedChallengeIds?: string[]
     solvedProblems?: string[]; createdAt?: number
     quizProgress?: Record<string, { score: number; total: number; grade: string; completedAt: number }>
     sessionHistory?: Array<{ id: string; problemId: string; problemTitle: string; mode: string; date: number; scores: { architecture: number; scalability: number; reliability: number; communication: number; overall: number; grade: string } }>
   }
-  if (!googleId) { res.status(400).json({ ok: false }); return }
+  if (!googleId) { res.status(401).json({ ok: false }); return }
 
   try {
     // Upsert core user fields
@@ -238,9 +284,10 @@ app.post('/api/users/sync', async (req: Request, res: Response) => {
   }
 })
 
-app.get('/api/users/:googleId', async (req: Request, res: Response) => {
+// ── REST: Current user profile (identity from token) ────────────────────────────
+app.get('/api/me', async (req: Request, res: Response) => {
   try {
-    const googleId = String(req.params.googleId)
+    const googleId = (req as AuthRequest).googleId
     const user = await getUser(googleId)
     if (!user) { res.status(404).json({ found: false }); return }
 
@@ -274,8 +321,11 @@ app.get('/api/users/:googleId', async (req: Request, res: Response) => {
 
 // ── REST: Send welcome email — only on true sign-up (never seen this googleId before) ──
 app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
-  const { email, name, googleId } = req.body as { email?: string; name?: string; googleId?: string }
+  // Identity from the verified token — the body only supplies display fields.
+  const googleId = (req as AuthRequest).googleId
+  const { email, name } = req.body as { email?: string; name?: string }
   if (!email || !name || !googleId) { res.status(400).json({ ok: false }); return }
+  if (tooLong(email, 320) || tooLong(name, LIMITS.customTitle)) { res.status(400).json({ ok: false }); return }
 
   // Already welcomed — this is a login, not a sign-up
   if (await isWelcomed(googleId)) {
@@ -283,7 +333,7 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
     return
   }
 
-  const brevoKey = process.env.BREVO_API_KEY
+  const brevoKey = config.brevoApiKey
   if (!brevoKey) {
     console.warn('[Email] BREVO_API_KEY not set — welcome email skipped')
     res.json({ ok: false, reason: 'no_credentials' })
@@ -313,7 +363,7 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
       method: 'POST',
       headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        sender: { name: 'Archly', email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' },
+        sender: { name: 'Archly', email: config.brevoSenderEmail },
         to: [{ email }],
         subject: `Welcome to Archly, ${name}!`,
         htmlContent: html,
@@ -334,30 +384,8 @@ app.post('/api/send-welcome-email', async (req: Request, res: Response) => {
   }
 })
 
-// ── REST: Test email (dev/debug only) ────────────────────────────────────────
-app.get('/api/test-email', async (_req: Request, res: Response) => {
-  const brevoKey = process.env.BREVO_API_KEY
-  if (!brevoKey) { res.json({ ok: false, reason: 'no_credentials' }); return }
-  try {
-    const resp = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: { 'api-key': brevoKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        sender: { name: 'Archly', email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' },
-        to: [{ email: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com' }],
-        subject: 'Archly email test',
-        htmlContent: '<p>Email is working!</p>',
-      }),
-    })
-    const data = await resp.json() as unknown
-    res.json({ ok: resp.ok, data })
-  } catch (err) {
-    res.json({ ok: false, error: String(err) })
-  }
-})
-
 // ── REST: Generate more quiz questions for a topic ────────────────────────────
-app.post('/api/generate-quiz-questions', async (req: Request, res: Response) => {
+app.post('/api/generate-quiz-questions', llmRateLimit, async (req: Request, res: Response) => {
   const { topicSlug, topicTitle, existingIds } = req.body as {
     topicSlug: string
     topicTitle: string
@@ -367,13 +395,23 @@ app.post('/api/generate-quiz-questions', async (req: Request, res: Response) => 
     res.status(400).json({ error: 'topicSlug and topicTitle required' })
     return
   }
+  if (tooLong(topicSlug, LIMITS.topicField) || tooLong(topicTitle, LIMITS.topicField)) {
+    res.status(413).json({ error: 'Input too long' })
+    return
+  }
 
-  // Return DB-cached questions not already known to the client
+  // Return DB-cached questions not already known to the client (cheap, no LLM)
   const cached = await getGeneratedQuestions(topicSlug)
   const clientIds = new Set(existingIds ?? [])
   const fresh = cached.filter(q => !clientIds.has(q.id))
   if (fresh.length > 0) {
     res.json({ questions: fresh })
+    return
+  }
+
+  // Cache miss — this path calls the LLM, so the cost breaker applies here.
+  if (isOverDailyBudget()) {
+    res.status(503).json({ error: FRIENDLY_CAPACITY_MESSAGE })
     return
   }
 
@@ -413,6 +451,7 @@ Return ONLY valid JSON (no markdown):
       stream: false,
     })
     const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+    recordSpend(prompt.length, raw.length)
     const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(clean)
     const questions = parsed.questions ?? []
@@ -426,12 +465,16 @@ Return ONLY valid JSON (no markdown):
 })
 
 // ── REST: Full canvas trace (pre-computes all steps in one AI call) ───────────
-app.post('/api/trace-full', async (req: Request, res: Response) => {
+app.post('/api/trace-full', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { nodes, edges } = req.body as {
     nodes: Array<{ id: string; type: string; label: string }>
     edges: Array<{ id: string; from: string; to: string; label?: string }>
   }
   if (!nodes?.length) { res.status(400).json({ error: 'No nodes' }); return }
+  if (nodes.length > LIMITS.maxNodes || (Array.isArray(edges) && edges.length > LIMITS.maxEdges)) {
+    res.status(413).json({ error: 'Graph too large' })
+    return
+  }
 
   const nodeList = nodes.map(n => `- id="${n.id}" label="${n.label}" type="${n.type}"`).join('\n')
   const edgeList = edges.map(e => {
@@ -488,6 +531,7 @@ Rules:
       stream: false,
     })
     const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+    recordSpend(prompt.length, raw.length)
     const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(clean)
     res.json(parsed)
@@ -498,13 +542,15 @@ Rules:
 })
 
 // ── REST: Request trace step ──────────────────────────────────────────────────
-app.post('/api/trace-step', async (req: Request, res: Response) => {
+app.post('/api/trace-step', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { nodes, edges, currentNodeId, history } = req.body as {
     nodes: Array<{ id: string; type: string; label: string }>
     edges: Array<{ id: string; from: string; to: string; label?: string }>
     currentNodeId: string
     history: string[]
   }
+  if (!Array.isArray(nodes) || !Array.isArray(edges)) { res.status(400).json({ error: 'nodes and edges required' }); return }
+  if (nodes.length > LIMITS.maxNodes || edges.length > LIMITS.maxEdges) { res.status(413).json({ error: 'Graph too large' }); return }
   const currentNode = nodes.find(n => n.id === currentNodeId)
   if (!currentNode) { res.status(400).json({ error: 'Node not found' }); return }
 
@@ -555,6 +601,7 @@ Return ONLY valid JSON (no markdown):
       stream: false,
     })
     const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+    recordSpend(prompt.length, raw.length)
     const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
     const parsed = JSON.parse(clean)
     if (outgoing.length === 0) parsed.isTerminal = true
@@ -581,7 +628,5 @@ createWSHub(wss)
 server.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`WebSocket ready on ws://localhost:${PORT}/ws`)
-  if (!process.env.OPENROUTER_API_KEY) {
-    console.warn('WARNING: OPENROUTER_API_KEY not set — AI features will fail')
-  }
+  console.log(`Daily LLM cost cap: $${config.maxDailyCostUsd}`)
 })

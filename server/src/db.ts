@@ -1,10 +1,8 @@
 import { createClient } from '@supabase/supabase-js'
 import ws from 'ws'
+import { config } from './config.js'
 
-const url = process.env.SUPABASE_URL ?? ''
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
-
-export const db = createClient(url, key, {
+export const db = createClient(config.supabaseUrl, config.supabaseServiceRoleKey, {
   realtime: { transport: ws as never },
 })
 
@@ -95,4 +93,37 @@ export async function getGeneratedQuestions(topicSlug: string): Promise<QuizQues
 export async function saveGeneratedQuestions(topicSlug: string, questions: QuizQuestion[]) {
   const rows = questions.map(q => ({ ...q, topic_slug: topicSlug }))
   await db.from('generated_quiz_questions').upsert(rows, { onConflict: 'id' })
+}
+
+// ── Usage Ledger (best-effort) ──────────────────────────────────────────────────
+// Increments a per-user/per-day usage row. Intentionally swallows ALL errors so the
+// app keeps working even if the `usage_ledger` migration has not been applied yet.
+
+export async function recordLedgerUsage(
+  userId: string,
+  delta: { sessionsStarted?: number; tokensIn?: number; tokensOut?: number; costCents?: number }
+): Promise<void> {
+  try {
+    if (!userId) return
+    const day = new Date().toISOString().slice(0, 10) // UTC YYYY-MM-DD
+    const { data } = await db
+      .from('usage_ledger')
+      .select('sessions_started, tokens_in, tokens_out, cost_cents')
+      .eq('user_id', userId)
+      .eq('day', day)
+      .single()
+    const cur = (data ?? {}) as {
+      sessions_started?: number; tokens_in?: number; tokens_out?: number; cost_cents?: number
+    }
+    await db.from('usage_ledger').upsert({
+      user_id: userId,
+      day,
+      sessions_started: (cur.sessions_started ?? 0) + (delta.sessionsStarted ?? 0),
+      tokens_in: (cur.tokens_in ?? 0) + (delta.tokensIn ?? 0),
+      tokens_out: (cur.tokens_out ?? 0) + (delta.tokensOut ?? 0),
+      cost_cents: (cur.cost_cents ?? 0) + (delta.costCents ?? 0),
+    }, { onConflict: 'user_id,day' })
+  } catch {
+    // best-effort — table may be absent; never throw
+  }
 }
