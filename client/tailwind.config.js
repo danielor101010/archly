@@ -5,6 +5,8 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Legacy raw-color tokens (still the source of truth for page/card
+        // backgrounds — do not remove, widely used across components).
         page:        'var(--c-bg-page)',
         card:        'var(--c-bg-card)',
         'card-dark': 'var(--c-bg-card-dark)',
@@ -13,12 +15,31 @@ export default {
           panel: '#111116',
           elevated: '#18181f',
         },
+
+        // ── Semantic design-system tokens ──────────────────────────────
+        // Backed by the CSS custom properties defined in src/index.css
+        // (":root" = dark, ".light" = light). See the token banner at the
+        // top of that file for the full list and the component migration
+        // path (e.g. `text-zinc-400` -> `text-text-muted`).
+        text: {
+          primary: 'var(--text-primary)',     // text-text-primary
+          secondary: 'var(--text-secondary)', // text-text-secondary
+          muted: 'var(--text-muted)',         // text-text-muted
+          subtle: 'var(--text-subtle)',       // text-text-subtle
+        },
+        surface: {
+          DEFAULT: 'var(--surface)',          // bg-surface           (alias of bg-card)
+          elevated: 'var(--surface-elevated)',// bg-surface-elevated  (modals/popups)
+          sunken: 'var(--surface-sunken)',    // bg-surface-sunken    (alias of bg-page)
+        },
         border: {
-          subtle: 'rgba(255,255,255,0.06)',
-          default: 'rgba(255,255,255,0.12)',
-          strong: 'rgba(255,255,255,0.2)',
+          subtle: 'var(--border-subtle)',
+          default: 'var(--border-default)',
+          strong: 'var(--border-strong)',
         },
         accent: {
+          DEFAULT: 'var(--accent)',   // bg-accent / text-accent / border-accent
+          hover: 'var(--accent-hover)',
           primary: '#6366f1',
           secondary: '#8b5cf6',
           glow: 'rgba(99,102,241,0.3)',
