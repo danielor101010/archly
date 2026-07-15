@@ -1,4 +1,4 @@
-import { apiUrl } from '../lib/api'
+import { authFetch } from '../lib/api'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
@@ -46,6 +46,8 @@ export interface UserProfile {
   googleId?: string
   email?: string
   avatar?: string
+  /** Server-issued auth token (Bearer). Persisted so sessions survive reloads. */
+  token?: string
 }
 
 interface UserState extends UserProfile {
@@ -60,7 +62,8 @@ interface UserState extends UserProfile {
   addSessionRecord: (record: SessionRecord) => void
   recordChallengeComplete: (challengeKey: string) => void
   recordQuizResult: (key: string, score: number, total: number, grade: string) => void
-  setGoogleUser: (info: { googleId: string; name: string; email: string; avatar: string }) => void
+  setGoogleUser: (info: { token: string; googleId: string; name: string; email: string; avatar: string }) => void
+  setToken: (token: string | undefined) => void
   signOut: () => void
   restoreProgress: (saved: Partial<UserProfile>) => void
   syncToServer: () => void
@@ -87,6 +90,7 @@ export const useUserStore = create<UserState>()(
       googleId: undefined,
       email: undefined,
       avatar: undefined,
+      token: undefined,
 
       setName: (name) => set({ name }),
 
@@ -132,12 +136,14 @@ export const useUserStore = create<UserState>()(
         setTimeout(() => get().syncToServer(), 0)
       },
 
-      setGoogleUser: ({ googleId, name, email, avatar }) => {
-        set({ googleId, name, email, avatar })
+      setGoogleUser: ({ token, googleId, name, email, avatar }) => {
+        set({ token, googleId, name, email, avatar })
         setTimeout(() => get().syncToServer(), 0)
       },
 
-      signOut: () => set({ name: '', googleId: undefined, email: undefined, avatar: undefined }),
+      setToken: (token) => set({ token }),
+
+      signOut: () => set({ name: '', googleId: undefined, email: undefined, avatar: undefined, token: undefined }),
 
       restoreProgress: (saved) => {
         const cur = get()
@@ -161,8 +167,8 @@ export const useUserStore = create<UserState>()(
 
       syncToServer: () => {
         const s = get()
-        if (!s.googleId) return
-        fetch(apiUrl('/api/users/sync'), {
+        if (!s.googleId || !s.token) return
+        authFetch('/api/users/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -218,6 +224,7 @@ export const useUserStore = create<UserState>()(
         googleId: state.googleId,
         email: state.email,
         avatar: state.avatar,
+        token: state.token,
       }),
     }
   )

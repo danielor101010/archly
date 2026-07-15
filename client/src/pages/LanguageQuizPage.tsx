@@ -5,7 +5,7 @@ import { ArrowLeft, CheckCircle2, XCircle, RotateCcw, Sparkles, ChevronRight } f
 import { LANGUAGES } from '../config/languages'
 import { LANGUAGE_QUESTIONS, type LangQuestion } from '../config/languageQuestions'
 import { shuffleQuestions } from '../lib/shuffleQuiz'
-import { apiUrl } from '../lib/api'
+import { authFetch } from '../lib/api'
 import { loadGeneratedQuestions, saveGeneratedQuestions } from '../lib/quizCache'
 import { useUserStore } from '../stores/userStore'
 
@@ -67,7 +67,7 @@ export const LanguageQuizPage = () => {
     setGenError('')
     try {
       const existingIds = allQuestions.map(q => q.id)
-      const resp = await fetch(apiUrl('/api/generate-quiz-questions'), {
+      const resp = await authFetch('/api/generate-quiz-questions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

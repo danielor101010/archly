@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { apiUrl } from '../../lib/api'
+import { authFetch } from '../../lib/api'
 import { useGraphStore } from '../../stores/graphStore'
 
 export interface TracePathStep {
@@ -76,7 +76,7 @@ export function useRequestTrace(): UseRequestTraceReturn {
     useGraphStore.getState().setTraceHighlight(null)
 
     try {
-      const resp = await fetch(apiUrl('/api/trace-full'), {
+      const resp = await authFetch('/api/trace-full', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nodes, edges }),
