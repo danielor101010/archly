@@ -18,6 +18,13 @@ import {
   SOLUTION_CANVAS_TEMPLATES,
 } from './prompts.js'
 import { parseCanvasCommands, CanvasCommand } from './architectureParser.js'
+import { validateCanvasCommands } from './validateCommands.js'
+
+function logRejected(source: string, rejected: ReturnType<typeof validateCanvasCommands>['rejected']): void {
+  for (const r of rejected) {
+    console.warn(`[AI] Dropped ${source} command ${r.type} (${r.ref}): ${r.reason}`)
+  }
+}
 
 const client = new OpenAI({
   baseURL: 'https://openrouter.ai/api/v1',
@@ -101,8 +108,10 @@ export async function streamAIResponse(
       callbacks.onTextDelta(delta)
     }
 
-    const commands = parseCanvasCommands(fullText)
-    for (const cmd of commands) {
+    const parsed = parseCanvasCommands(fullText)
+    const { valid, rejected } = validateCanvasCommands(parsed, Object.keys(session.graph.nodes))
+    logRejected('chat', rejected)
+    for (const cmd of valid) {
       console.log('[AI] Canvas command:', cmd.type, cmd.node?.id ?? cmd.nodeId ?? '')
       callbacks.onCanvasCommand(cmd)
     }
@@ -231,9 +240,12 @@ export async function streamSolutionResponse(
       }
     } else {
       // All other problems (custom CV or any of the 20+ new problems):
-      // use AI-generated canvas commands from the solution text
-      const commands = parseCanvasCommands(fullText)
-      for (const cmd of commands) {
+      // use AI-generated canvas commands from the solution text. Validated — the
+      // solution starts from a cleared canvas, so emission order defines existence.
+      const parsed = parseCanvasCommands(fullText)
+      const { valid, rejected } = validateCanvasCommands(parsed, [])
+      logRejected('solution', rejected)
+      for (const cmd of valid) {
         callbacks.onCanvasCommand(cmd)
       }
     }
