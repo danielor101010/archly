@@ -71,78 +71,150 @@ class SessionStore {
     }
   }
 
+  /**
+   * Deterministic, side-effect-free scoring rubric.
+   *
+   * Philosophy: a design is only as good as it is CONNECTED. The old logic
+   * graded almost entirely on the count of distinct node TYPES, so dropping 8
+   * unconnected components scored "A+ / Strong Hire" — a meaningless signal for
+   * a paid product. The rubric below gates every graph dimension behind real
+   * connectivity (edges + non-orphan nodes), rewards redundancy and resilience
+   * patterns only when the relevant nodes are actually wired in, and treats raw
+   * message volume as a deliberately weak signal. Top grades require breadth
+   * (diverse components) AND depth (well-connected, redundant, resilient) AND
+   * interaction. A near-empty design lands at D / Strong No Hire.
+   *
+   * NOTE: this is the deterministic interim. PRODUCTION_PLAN §3.4 calls for an
+   * LLM rubric over the transcript + final graph as a separate future
+   * increment; this method must stay deterministic, network-free, and pure
+   * (its only side effect is assigning `session.scores`).
+   */
   updateScores(sessionId: string): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
 
+    const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)))
+
     const nodes = Object.values(session.graph.nodes)
-    const nodeTypes = new Set(nodes.map((n) => n.type))
+    const edges = Object.values(session.graph.edges)
+    const nodeCount = nodes.length
 
-    // Architecture score: based on component diversity and structure
-    const hasLB = nodeTypes.has('load_balancer')
-    const hasCache = nodeTypes.has('cache')
-    const hasDB = nodeTypes.has('database')
-    const hasQueue = nodeTypes.has('message_queue')
-    const hasGateway = nodeTypes.has('api_gateway')
+    // ---- Connectivity: the master gate -------------------------------------
+    // Degree per node, counting only VALID edges (both endpoints exist, no
+    // self-loops). Stale edges left behind by node removal are ignored.
+    const nodeIds = new Set(nodes.map((n) => n.id))
+    const degree = new Map<string, number>()
+    for (const n of nodes) degree.set(n.id, 0)
+    let validEdges = 0
+    for (const e of edges) {
+      if (e.from !== e.to && nodeIds.has(e.from) && nodeIds.has(e.to)) {
+        degree.set(e.from, (degree.get(e.from) ?? 0) + 1)
+        degree.set(e.to, (degree.get(e.to) ?? 0) + 1)
+        validEdges++
+      }
+    }
+    const connectedNodes = nodes.filter((n) => (degree.get(n.id) ?? 0) > 0)
+    const connectedCount = connectedNodes.length
 
-    const componentScore = Math.min(100, nodeTypes.size * 12)
-    const structureBonus = [hasLB, hasCache, hasDB, hasGateway].filter(Boolean).length * 8
+    // Fraction of nodes actually wired in (orphan penalty). 0 when no nodes.
+    const connectivity = nodeCount > 0 ? connectedCount / nodeCount : 0
+    // Do we have enough edges to plausibly connect the graph? A connected graph
+    // needs >= nodeCount-1 edges; denominator is floored at 1 to avoid div-by-0.
+    const edgeDensity = Math.min(1, validEdges / Math.max(1, nodeCount - 1))
+    // Combined wiring gate in [0,1]. Zero for an empty or edgeless graph, so
+    // every graph dimension below collapses toward 0 without connectivity.
+    const wiring = 0.6 * connectivity + 0.4 * edgeDensity
+    // Depth grows with the size of the CONNECTED core; ~6 connected nodes for
+    // full credit. Stops a trivial 2-3 node line from banking full wiring bonus.
+    const depthScale = Math.min(1, connectedCount / 6)
 
-    session.scores.architecture = Math.min(100, componentScore + structureBonus)
-    session.scores.scalability = Math.min(
-      100,
-      (hasLB ? 30 : 0) +
-        (hasCache ? 30 : 0) +
-        (hasQueue ? 25 : 0) +
-        componentScore * 0.2
+    // Type presence is measured over CONNECTED nodes only: a disconnected node
+    // contributes nothing. `typesConnected` therefore encodes "present AND wired".
+    const typesConnected = new Set(connectedNodes.map((n) => n.type))
+    const connCountOf = (t: string) =>
+      connectedNodes.filter((n) => n.type === t).length
+
+    // ---- Architecture: sensible layers, wired together, plus diversity ------
+    // Three tiers, each credited only if a member is connected:
+    //   entry/edge  → LB / gateway / CDN / websocket gateway
+    //   compute     → api_service / k8s_cluster
+    //   data        → database / cache / object_storage / search_cluster
+    const entryLayer = ['load_balancer', 'api_gateway', 'cdn', 'websocket_gateway'].some((t) => typesConnected.has(t as any))
+    const computeLayer = ['api_service', 'k8s_cluster'].some((t) => typesConnected.has(t as any))
+    const dataLayer = ['database', 'cache', 'object_storage', 'search_cluster'].some((t) => typesConnected.has(t as any))
+    const layersPresent = [entryLayer, computeLayer, dataLayer].filter(Boolean).length // 0..3
+    session.scores.architecture = clamp(
+      layersPresent * 15 +                       // wired layers: up to 45
+        Math.min(30, typesConnected.size * 5) +  // connected component diversity: up to 30
+        wiring * depthScale * 25                 // wiring quality, scaled by core size: up to 25
     )
-    // Reliability: based on architecture redundancy and resilience patterns
-    const hasCDN = nodeTypes.has('cdn')
-    const hasNotification = nodeTypes.has('notification_service')
-    const hasSearch = nodeTypes.has('search_cluster')
-    session.scores.reliability = Math.min(
-      100,
-      (hasLB ? 30 : 0) +            // LB eliminates web-tier SPOF
-      (hasDB ? 20 : 0) +             // persistent storage = durable
-      (hasQueue ? 20 : 0) +          // async decoupling = resilient to spikes
-      (hasCache ? 15 : 0) +          // cache = DB failures don't kill reads
-      (hasCDN ? 10 : 0) +            // CDN = static content stays up
-      (nodes.length >= 5 ? 5 : 0)    // breadth bonus
-    )
-    session.scores.communication = Math.min(
-      100,
-      session.messages.filter((m) => m.role === 'user').length * 8
-    )
 
-    session.scores.overall = Math.round(
-      session.scores.architecture * 0.3 +
+    // ---- Scalability: horizontal-scaling components, scaled by connectivity -
+    const scalabilityRaw =
+      (typesConnected.has('load_balancer') ? 28 : 0) +
+      (typesConnected.has('cache') ? 24 : 0) +
+      (typesConnected.has('message_queue') ? 22 : 0) +
+      (typesConnected.has('cdn') ? 16 : 0) +
+      (typesConnected.has('k8s_cluster') ? 10 : 0) // orchestrator = elastic scaling
+    session.scores.scalability = clamp(scalabilityRaw * (0.6 + 0.4 * wiring))
+
+    // ---- Reliability: redundancy + resilience, only when connected ----------
+    // Redundancy = 2+ CONNECTED instances of a stateless service or the datastore.
+    // A lone LB with no edges is NOT reliability — hence typesConnected gating.
+    const serviceRedundancy = connCountOf('api_service') >= 2
+    const dbRedundancy = connCountOf('database') >= 2
+    const reliabilityRaw =
+      (serviceRedundancy ? 25 : 0) +                          // no service-tier SPOF
+      (dbRedundancy ? 20 : 0) +                               // no data-tier SPOF
+      (typesConnected.has('load_balancer') ? 18 : 0) +       // eliminates web-tier SPOF
+      (typesConnected.has('message_queue') ? 14 : 0) +       // async decoupling absorbs spikes
+      (typesConnected.has('cache') ? 12 : 0) +               // reads survive DB pressure
+      (typesConnected.has('cdn') ? 11 : 0)                   // static content stays up
+    session.scores.reliability = clamp(reliabilityRaw * (0.6 + 0.4 * wiring))
+
+    // ---- Communication: deliberately WEAK deterministic signal --------------
+    // Message VOLUME is a poor proxy for quality (the old `*8` was trivially
+    // maxed). Cap the contribution low; real communication scoring needs the
+    // LLM rubric (§3.4). Volume alone must never drive a high overall grade.
+    const userMsgs = session.messages.filter((m) => m.role === 'user').length
+    session.scores.communication = clamp(Math.min(50, userMsgs * 7))
+
+    // ---- Overall: weighted blend --------------------------------------------
+    // Architecture leads; scalability and reliability matter equally; the weak
+    // communication signal is kept at a low weight so it cannot carry a design.
+    session.scores.overall = clamp(
+      session.scores.architecture * 0.35 +
         session.scores.scalability * 0.25 +
         session.scores.reliability * 0.25 +
-        session.scores.communication * 0.2
+        session.scores.communication * 0.15
     )
 
+    // ---- Grade & verdict: recalibrated so top grades are genuinely hard -----
+    // Communication caps at 50, so the practical overall ceiling is ~93; A+
+    // therefore demands near-maxed architecture, scalability and reliability
+    // (breadth + depth + redundancy) plus real interaction.
     const score = session.scores.overall
     session.scores.grade =
-      score >= 90
+      score >= 88
         ? 'A+'
-        : score >= 80
+        : score >= 76
           ? 'A'
-          : score >= 70
+          : score >= 66
             ? 'B+'
-            : score >= 60
+            : score >= 54
               ? 'B'
-              : score >= 50
+              : score >= 40
                 ? 'C'
                 : 'D'
 
     session.scores.verdict =
-      score >= 80
+      score >= 85
         ? 'Strong Hire'
-        : score >= 65
+        : score >= 70
           ? 'Hire'
-          : score >= 50
+          : score >= 54
             ? 'Lean Hire'
-            : score >= 35
+            : score >= 38
               ? 'No Hire'
               : 'Strong No Hire'
   }
