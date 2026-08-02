@@ -237,7 +237,7 @@ ${nodes.length ? nodes.map((n) => `  id="${n.id}" type="${n.type}" label="${n.la
 
 Existing edges:
 ${edges.length ? edges.map((e) => `  id="${e.id}" from="${e.from}" to="${e.to}"`).join('\n') : '  (none yet)'}
-
+${session.recentManualEdits.length ? `\n⚠️ The candidate just edited the canvas DIRECTLY (not through chat): ${session.recentManualEdits.join('; ')}. React to these specific changes — acknowledge good moves and challenge questionable ones.\n` : ''}
 Detected weaknesses to probe:
 ${weaknesses.length ? weaknesses.map((w) => `- ${w}`).join('\n') : '- None obvious yet — push for deeper design'}
 
@@ -298,7 +298,7 @@ ${nodes.length ? nodes.map((n) => `  id="${n.id}" type="${n.type}" label="${n.la
 
 Existing edges:
 ${edges.length ? edges.map((e) => `  id="${e.id}" from="${e.from}" to="${e.to}"`).join('\n') : '  (none yet)'}
-
+${session.recentManualEdits.length ? `\n⚠️ The user just edited the canvas DIRECTLY (not through chat): ${session.recentManualEdits.join('; ')}. React to these specific changes — acknowledge good moves and probe questionable ones.\n` : ''}
 Be encouraging. Help them build a complete, well-designed system step by step.
 
 ${levelInstruction}${customDesc}`

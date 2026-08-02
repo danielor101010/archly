@@ -262,6 +262,8 @@ export function createWSHub(wss: WebSocketServer): void {
               send(ws, { type: 'AI_STREAM_END', cleanText: '' })
             },
           })
+          // Manual canvas edits have now been shown to the AI this turn — reset.
+          sessionStore.clearManualEdits(session.id)
           break
         }
 
@@ -445,6 +447,43 @@ export function createWSHub(wss: WebSocketServer): void {
             send(ws, { type: 'NODE_EXPLANATION', nodeId: msg.nodeId, text })
           } catch (err) {
             console.error('[WS] Node explain error:', err)
+          }
+          break
+        }
+
+        case 'CANVAS_EDIT': {
+          // The user edited the canvas directly (not via chat). Mirror the change
+          // into the server's graph and record a note so the AI can react next turn.
+          const session = sessionStore.getOwned(msg.sessionId, googleId)
+          if (!session) { send(ws, { type: 'ERROR', message: 'Session not found' }); break }
+          switch (msg.action) {
+            case 'add_node':
+              if (msg.node && (msg.node.label?.length ?? 0) <= LIMITS.nodeLabel) {
+                sessionStore.addNode(session.id, { id: msg.node.id, type: msg.node.type, label: msg.node.label, health: 'healthy', metrics: {} })
+                sessionStore.recordManualEdit(session.id, `added ${msg.node.type} "${msg.node.label}"`)
+              }
+              break
+            case 'add_edge':
+              if (msg.edge) {
+                sessionStore.addEdge(session.id, { id: msg.edge.id, from: msg.edge.from, to: msg.edge.to, type: 'sync' })
+                const from = session.graph.nodes[msg.edge.from]?.label ?? msg.edge.from
+                const to = session.graph.nodes[msg.edge.to]?.label ?? msg.edge.to
+                sessionStore.recordManualEdit(session.id, `connected ${from} → ${to}`)
+              }
+              break
+            case 'remove_node':
+              if (msg.nodeId) {
+                const label = session.graph.nodes[msg.nodeId]?.label ?? msg.nodeId
+                sessionStore.removeNode(session.id, msg.nodeId)
+                sessionStore.recordManualEdit(session.id, `removed ${label}`)
+              }
+              break
+            case 'remove_edge':
+              if (msg.edgeId) {
+                sessionStore.removeEdge(session.id, msg.edgeId)
+                sessionStore.recordManualEdit(session.id, 'removed a connection')
+              }
+              break
           }
           break
         }

@@ -3,6 +3,8 @@ import {
   Database, Search, HardDrive, Bell, Radio, Boxes,
 } from 'lucide-react'
 import { useGraphStore, type NodeType } from '../../stores/graphStore'
+import { useSessionStore } from '../../stores/sessionStore'
+import { sendWS } from '../../lib/ws'
 
 // The palette of components a user can drop onto the canvas by clicking. Order
 // roughly follows request flow (edge → compute → data → infra).
@@ -32,9 +34,14 @@ const DEFAULT_LABEL: Record<NodeType, string> = {
 
 export const NodePalette = () => {
   const addNode = useGraphStore(s => s.addNode)
+  const sessionId = useSessionStore(s => s.sessionId)
 
   const add = (type: NodeType) => {
-    addNode({ id: `${type}-${crypto.randomUUID().slice(0, 6)}`, type, label: DEFAULT_LABEL[type] })
+    const id = `${type}-${crypto.randomUUID().slice(0, 6)}`
+    const label = DEFAULT_LABEL[type]
+    addNode({ id, type, label })
+    // Two-way sync: tell the server/AI about the manual add so it can react.
+    if (sessionId) sendWS('CANVAS_EDIT', { sessionId, action: 'add_node', node: { id, type, label } })
   }
 
   return (

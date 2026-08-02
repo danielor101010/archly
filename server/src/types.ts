@@ -64,6 +64,9 @@ export interface Session {
   scores: ScoreState
   customProblemTitle?: string
   customProblemDesc?: string
+  // Human-readable notes of edits the user made directly on the canvas (not via
+  // chat), surfaced to the AI on the next turn so it can react to what they drew.
+  recentManualEdits: string[]
 }
 
 export interface ScoreState {
@@ -98,6 +101,7 @@ export type WSClientMessage =
   | { type: 'REQUEST_SOLUTION'; sessionId: string }
   | { type: 'NODE_EXPLAIN'; sessionId: string; nodeId: string; nodeType: string; nodeLabel: string }
   | { type: 'ANALYZE_CV'; cvText: string; userLevel?: string }
+  | { type: 'CANVAS_EDIT'; sessionId: string; action: 'add_node' | 'add_edge' | 'remove_node' | 'remove_edge'; node?: { id: string; type: NodeType; label: string }; edge?: { id: string; from: string; to: string }; nodeId?: string; edgeId?: string }
   | { type: 'PING' }
 
 export type WSServerMessage =

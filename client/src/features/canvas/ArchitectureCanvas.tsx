@@ -77,19 +77,31 @@ function CanvasInner() {
   const isEditable = viewingSnapshotIdx === null
 
   // ── Manual editing: draw edges, delete, and persist drag positions ──────────
+  // Each manual edit is mirrored to the server (CANVAS_EDIT) when in a session, so
+  // the AI can react to what the user drew — not just what they typed.
   const onConnect = useCallback((conn: Connection) => {
     if (!isEditable || !conn.source || !conn.target || conn.source === conn.target) return
     if (liveEdges.some(e => e.source === conn.source && e.target === conn.target)) return
-    addEdge({ id: `e-${crypto.randomUUID().slice(0, 8)}`, from: conn.source, to: conn.target })
-  }, [isEditable, liveEdges, addEdge])
+    const id = `e-${crypto.randomUUID().slice(0, 8)}`
+    addEdge({ id, from: conn.source, to: conn.target })
+    if (sessionId) sendWS('CANVAS_EDIT', { sessionId, action: 'add_edge', edge: { id, from: conn.source, to: conn.target } })
+  }, [isEditable, liveEdges, addEdge, sessionId])
 
   const onNodesDelete = useCallback((deleted: Node[]) => {
-    if (isEditable) deleted.forEach(n => removeNodeById(n.id))
-  }, [isEditable, removeNodeById])
+    if (!isEditable) return
+    deleted.forEach(n => {
+      removeNodeById(n.id)
+      if (sessionId) sendWS('CANVAS_EDIT', { sessionId, action: 'remove_node', nodeId: n.id })
+    })
+  }, [isEditable, removeNodeById, sessionId])
 
   const onEdgesDelete = useCallback((deleted: Edge[]) => {
-    if (isEditable) deleted.forEach(e => removeEdgeById(e.id))
-  }, [isEditable, removeEdgeById])
+    if (!isEditable) return
+    deleted.forEach(e => {
+      removeEdgeById(e.id)
+      if (sessionId) sendWS('CANVAS_EDIT', { sessionId, action: 'remove_edge', edgeId: e.id })
+    })
+  }, [isEditable, removeEdgeById, sessionId])
 
   const onNodeDragStop = useCallback((_e: unknown, node: Node) => {
     if (isEditable) updateNodePosition(node.id, node.position)

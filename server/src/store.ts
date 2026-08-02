@@ -38,6 +38,7 @@ class SessionStore {
       },
       customProblemTitle: customProblem?.title,
       customProblemDesc: customProblem?.description,
+      recentManualEdits: [],
     }
     this.sessions.set(session.id, session)
     return session
@@ -85,6 +86,27 @@ class SessionStore {
     session.graph.edges[edge.id] = edge
     this.touch(session)
     return true
+  }
+
+  removeEdge(sessionId: string, edgeId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    delete session.graph.edges[edgeId]
+    this.touch(session)
+  }
+
+  /** Record a note of a direct-on-canvas edit (capped; oldest dropped past 12). */
+  recordManualEdit(sessionId: string, note: string): void {
+    const session = this.sessions.get(sessionId)
+    if (!session) return
+    session.recentManualEdits.push(note)
+    if (session.recentManualEdits.length > 12) session.recentManualEdits.shift()
+    this.touch(session)
+  }
+
+  clearManualEdits(sessionId: string): void {
+    const session = this.sessions.get(sessionId)
+    if (session) session.recentManualEdits = []
   }
 
   removeNode(sessionId: string, nodeId: string): void {
