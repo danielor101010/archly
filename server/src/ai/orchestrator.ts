@@ -19,17 +19,13 @@ import {
 } from './prompts.js'
 import { parseCanvasCommands, CanvasCommand } from './architectureParser.js'
 import { validateCanvasCommands } from './validateCommands.js'
+import { getLLMClient, LLM_MODEL } from './llm.js'
 
 function logRejected(source: string, rejected: ReturnType<typeof validateCanvasCommands>['rejected']): void {
   for (const r of rejected) {
     console.warn(`[AI] Dropped ${source} command ${r.type} (${r.ref}): ${r.reason}`)
   }
 }
-
-const client = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY ?? '',
-})
 
 export interface StreamCallbacks {
   onTextDelta: (delta: string) => void
@@ -94,8 +90,8 @@ export async function streamAIResponse(
   let fullText = ''
 
   try {
-    const stream = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
+    const stream = await getLLMClient().chat.completions.create({
+      model: LLM_MODEL,
       messages,
       max_tokens: 1024,
       stream: true,
@@ -148,8 +144,8 @@ ${edgeList || '  (none yet)'}
 
 In 2-3 sentences, explain the specific role of "${nodeLabel}" (${nodeType}) in THIS design — what calls it, what it calls next, and its key responsibility in this system. Be concrete about data flow, not generic.`
 
-  const response = await client.chat.completions.create({
-    model: 'google/gemini-2.5-flash',
+  const response = await getLLMClient().chat.completions.create({
+    model: LLM_MODEL,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 150,
     stream: false,
@@ -161,8 +157,8 @@ In 2-3 sentences, explain the specific role of "${nodeLabel}" (${nodeType}) in T
 export async function analyzeCv(cvText: string, userLevel?: string): Promise<{ skills: string[]; problems: Array<{ id: string; title: string; description: string; relevantSkills: string[]; difficulty: string }> }> {
   const prompt = buildCvAnalysisPrompt(cvText, userLevel)
 
-  const response = await client.chat.completions.create({
-    model: 'google/gemini-2.5-flash',
+  const response = await getLLMClient().chat.completions.create({
+    model: LLM_MODEL,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 1500,
     stream: false,
@@ -189,8 +185,8 @@ export interface CvGapResult {
 
 export async function analyzeCvGap(cvText: string, jobDescription: string): Promise<CvGapResult> {
   const prompt = buildCvGapPrompt(cvText, jobDescription)
-  const response = await client.chat.completions.create({
-    model: 'google/gemini-2.5-flash',
+  const response = await getLLMClient().chat.completions.create({
+    model: LLM_MODEL,
     messages: [{ role: 'user', content: prompt }],
     max_tokens: 1500,
     stream: false,
@@ -217,8 +213,8 @@ export async function streamSolutionResponse(
   let fullText = ''
 
   try {
-    const stream = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
+    const stream = await getLLMClient().chat.completions.create({
+      model: LLM_MODEL,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 3000,
       stream: true,

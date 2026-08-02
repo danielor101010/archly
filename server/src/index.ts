@@ -15,6 +15,7 @@ import { llmRateLimit, authIpRateLimit } from './security/rateLimiter.js'
 import { isOverDailyBudget, recordSpend, FRIENDLY_CAPACITY_MESSAGE } from './security/costTracker.js'
 import { LIMITS, tooLong } from './security/limits.js'
 import type OpenAI from 'openai'
+import { getLLMClient, LLM_MODEL } from './ai/llm.js'
 
 const app = express()
 const PORT = config.port
@@ -183,13 +184,9 @@ User question: ${userMessage}
 Answer in 3-6 sentences. Be specific about the model the user provided — reference actual entity names and field names. If reviewing, check: primary keys, foreign keys, normalization, missing relationships, data types. If generating SQL, write proper CREATE TABLE statements with constraints.`
 
   try {
-    const OpenAI = (await import('openai')).default
-    const client = new OpenAI({
-      baseURL: 'https://openrouter.ai/api/v1',
-      apiKey: process.env.OPENROUTER_API_KEY ?? '',
-    })
+    const client = getLLMClient()
     const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
+      model: LLM_MODEL,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 600,
       stream: false,
@@ -261,9 +258,8 @@ Return ONLY valid JSON (no markdown):
 {"suggestions": ["...", "...", "..."]}`
 
   try {
-    const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const parsed = await completeJson<{ suggestions?: string[] }>(client, 'google/gemini-2.5-flash', prompt, 300, 'suggest-systems')
+    const client = getLLMClient()
+    const parsed = await completeJson<{ suggestions?: string[] }>(client, LLM_MODEL, prompt, 300, 'suggest-systems')
     res.json({ suggestions: parsed?.suggestions ?? [] })
   } catch (err) {
     console.error('[API] Suggest systems error:', err)
@@ -478,9 +474,8 @@ Return ONLY valid JSON (no markdown):
 }`
 
   try {
-    const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const parsed = await completeJson<{ questions?: QuizQuestion[] }>(client, 'google/gemini-2.5-flash', prompt, 2500, 'generate-quiz-questions')
+    const client = getLLMClient()
+    const parsed = await completeJson<{ questions?: QuizQuestion[] }>(client, LLM_MODEL, prompt, 2500, 'generate-quiz-questions')
     if (!parsed) {
       res.status(500).json({ error: 'Failed to generate questions' })
       return
@@ -553,9 +548,8 @@ Rules:
 - explanations must reference THIS system's actual component names`
 
   try {
-    const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const parsed = await completeJson<{ path: unknown }>(client, 'google/gemini-2.5-flash', prompt, 1200, 'trace-full')
+    const client = getLLMClient()
+    const parsed = await completeJson<{ path: unknown }>(client, LLM_MODEL, prompt, 1200, 'trace-full')
     if (!parsed) {
       res.status(500).json({ error: 'Analysis failed' })
       return
@@ -618,10 +612,9 @@ Return ONLY valid JSON (no markdown):
 }`
 
   try {
-    const { default: OpenAI } = await import('openai')
-    const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
+    const client = getLLMClient()
     const parsed = await completeJson<{ explanation: string; nextSteps: unknown[]; isTerminal: boolean }>(
-      client, 'google/gemini-2.5-flash', prompt, 400, 'trace-step',
+      client, LLM_MODEL, prompt, 400, 'trace-step',
     )
     if (!parsed) {
       res.status(500).json({

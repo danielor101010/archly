@@ -42,8 +42,9 @@ if (process.env.JWT_SECRET === DEV_SECRET) {
 }
 
 // Warn-only: the app boots without these but the affected features degrade.
-if (!process.env.OPENROUTER_API_KEY) {
-  console.warn('[config] WARNING: OPENROUTER_API_KEY is not set — AI features will fail.')
+const resolvedLlmKey = process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? ''
+if (!resolvedLlmKey) {
+  console.warn('[config] WARNING: no LLM API key set (DEEPSEEK_API_KEY) — AI features will fail.')
 }
 if (!process.env.BREVO_API_KEY) {
   console.warn('[config] WARNING: BREVO_API_KEY is not set — welcome emails will be skipped.')
@@ -56,6 +57,12 @@ export const config = {
   googleClientId: process.env.GOOGLE_CLIENT_ID as string,
   jwtSecret: process.env.JWT_SECRET as string,
 
+  // LLM provider — DeepSeek by default (OpenAI-compatible API). Falls back to an
+  // OpenRouter key if that's all that's set; base URL + model overridable via env.
+  llmApiKey: process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '',
+  llmBaseUrl: process.env.LLM_BASE_URL ?? 'https://api.deepseek.com',
+  llmModel: process.env.LLM_MODEL ?? 'deepseek-chat',
+
   // Optional integrations
   openRouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
   brevoApiKey: process.env.BREVO_API_KEY ?? '',
@@ -67,7 +74,8 @@ export const config = {
 
   // Cost / rate-limit knobs
   maxDailyCostUsd: num('MAX_DAILY_COST_USD', 5),
-  // Blended price-per-1k-tokens estimate for google/gemini-2.5-flash (input+output).
+  // Blended price-per-1k-tokens estimate for the LLM (input+output). Conservative
+  // default; DeepSeek is cheaper, so the cost breaker over-estimates (safe).
   llmPricePer1kUsd: num('LLM_PRICE_PER_1K_USD', 0.001),
   llmRateLimitPerMin: num('LLM_RATE_LIMIT_PER_MIN', 15),
   authRateLimitPerMin: num('AUTH_RATE_LIMIT_PER_MIN', 10),
