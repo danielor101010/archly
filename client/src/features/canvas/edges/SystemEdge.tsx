@@ -6,7 +6,7 @@ import { useGraphStore } from '../../../stores/graphStore'
 
 export const SystemEdge = memo(({
   id, sourceX, sourceY, targetX, targetY,
-  sourcePosition, targetPosition, label, data, selected
+  sourcePosition, targetPosition, label, data, selected, markerEnd
 }: EdgeProps) => {
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX, sourceY, sourcePosition,
@@ -27,6 +27,7 @@ export const SystemEdge = memo(({
       <BaseEdge
         id={id}
         path={edgePath}
+        markerEnd={markerEnd}
         style={{
           stroke: isFailed
             ? 'rgba(239,68,68,0.6)'

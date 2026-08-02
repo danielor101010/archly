@@ -1,9 +1,9 @@
 import { useEffect, useCallback, useState, useMemo } from 'react'
 import ReactFlow, {
-  Background, BackgroundVariant,
+  Background, BackgroundVariant, MarkerType,
   useNodesState, useEdgesState, ReactFlowProvider, useReactFlow,
 } from 'reactflow'
-import type { EdgeTypes } from 'reactflow'
+import type { EdgeTypes, Connection, Node, Edge } from 'reactflow'
 import { AnimatePresence } from 'framer-motion'
 import 'reactflow/dist/style.css'
 import { useGraphStore } from '../../stores/graphStore'
@@ -18,11 +18,12 @@ import { NodeExplanation } from './NodeExplanation'
 import { NodeListPanel } from './NodeListPanel'
 import { RequestTracer } from './RequestTracer'
 import { useRequestTrace } from './useRequestTrace'
+import { NodePalette } from './NodePalette'
 
 const edgeTypes: EdgeTypes = { systemEdge: SystemEdge }
 
 function CanvasInner() {
-  const { nodes: liveNodes, edges: liveEdges, snapshots, viewingSnapshotIdx, isStressTesting, isCanvasFullscreen, setCanvasFullscreen, nodeExplanationText, nodeExplanationLoading, setNodeExplanationLoading, clearNodeExplanation, pendingFitView, clearFitView, traceHighlightId } = useGraphStore()
+  const { nodes: liveNodes, edges: liveEdges, snapshots, viewingSnapshotIdx, isStressTesting, isCanvasFullscreen, setCanvasFullscreen, nodeExplanationText, nodeExplanationLoading, setNodeExplanationLoading, clearNodeExplanation, pendingFitView, clearFitView, traceHighlightId, addEdge, removeNodeById, removeEdgeById, updateNodePosition } = useGraphStore()
   const { sessionId } = useSessionStore()
   const { fitView } = useReactFlow()
   const [selectedExplanation, setSelectedExplanation] = useState<{ type: string; label: string } | null>(null)
@@ -73,6 +74,26 @@ function CanvasInner() {
   useEffect(() => { setEdges(storeEdges) }, [storeEdges, setEdges])
 
   const isEmpty = liveNodes.length === 0
+  const isEditable = viewingSnapshotIdx === null
+
+  // ── Manual editing: draw edges, delete, and persist drag positions ──────────
+  const onConnect = useCallback((conn: Connection) => {
+    if (!isEditable || !conn.source || !conn.target || conn.source === conn.target) return
+    if (liveEdges.some(e => e.source === conn.source && e.target === conn.target)) return
+    addEdge({ id: `e-${crypto.randomUUID().slice(0, 8)}`, from: conn.source, to: conn.target })
+  }, [isEditable, liveEdges, addEdge])
+
+  const onNodesDelete = useCallback((deleted: Node[]) => {
+    if (isEditable) deleted.forEach(n => removeNodeById(n.id))
+  }, [isEditable, removeNodeById])
+
+  const onEdgesDelete = useCallback((deleted: Edge[]) => {
+    if (isEditable) deleted.forEach(e => removeEdgeById(e.id))
+  }, [isEditable, removeEdgeById])
+
+  const onNodeDragStop = useCallback((_e: unknown, node: Node) => {
+    if (isEditable) updateNodePosition(node.id, node.position)
+  }, [isEditable, updateNodePosition])
 
   return (
     <div className={`relative h-full bg-page transition-opacity duration-300 ${viewingSnapshotIdx !== null ? 'opacity-75' : ''}`}>
@@ -88,7 +109,12 @@ function CanvasInner() {
         minZoom={0.3}
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: 'systemEdge', animated: isStressTesting }}
+        deleteKeyCode={['Backspace', 'Delete']}
+        onConnect={onConnect}
+        onNodesDelete={onNodesDelete}
+        onEdgesDelete={onEdgesDelete}
+        onNodeDragStop={onNodeDragStop}
+        defaultEdgeOptions={{ type: 'systemEdge', animated: isStressTesting, markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: 'rgba(148,148,148,0.55)' } }}
         onNodeClick={(_evt, node) => {
           setSelectedExplanation({ type: node.data.type, label: node.data.label })
           if (sessionId) {
@@ -106,6 +132,7 @@ function CanvasInner() {
       </ReactFlow>
 
       <CanvasToolbar nodeCount={liveNodes.length} onTogglePanel={() => setPanelOpen(o => !o)} panelOpen={panelOpen} trace={trace} />
+      {isEditable && !isStressTesting && <NodePalette />}
       {panelOpen && <NodeListPanel onClose={() => setPanelOpen(false)} />}
       <RequestTracer trace={trace} />
       <StressTestPanel />

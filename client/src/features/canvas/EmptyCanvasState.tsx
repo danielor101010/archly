@@ -8,7 +8,8 @@ export const EmptyCanvasState = () => (
       </div>
       <h3 className="text-zinc-400 font-medium mb-2">Architecture Canvas</h3>
       <p className="text-zinc-600 text-sm leading-relaxed">
-        Describe your system in the chat and the architecture will appear here in real-time
+        Describe your system in the chat and the architecture appears here in real-time — or add
+        components yourself from the palette below and drag between them to connect
       </p>
       <div className="mt-4 text-xs text-zinc-700 font-mono bg-white/3 rounded-lg p-3 border border-white/5">
         "I'll put a load balancer in front of my API servers..."

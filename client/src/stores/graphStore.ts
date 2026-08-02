@@ -245,6 +245,9 @@ export const useGraphStore = create<GraphState>()(
       removeNodeById: (id) => {
         set((s) => ({
           nodes: s.nodes.filter(n => n.id !== id),
+          // Removing a node must remove its edges too, or they orphan-reference a
+          // node that no longer exists (mirrors the server-side store behavior).
+          edges: s.edges.filter(e => e.source !== id && e.target !== id),
           tempNodeIds: s.tempNodeIds.filter(tid => tid !== id),
         }))
       },
