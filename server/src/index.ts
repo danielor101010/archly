@@ -9,10 +9,12 @@ import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
 import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
+import type { QuizQuestion } from './db.js'
 import { verifyGoogleCredential, signToken, authenticate, AuthRequest } from './auth.js'
 import { llmRateLimit, authIpRateLimit } from './security/rateLimiter.js'
 import { isOverDailyBudget, recordSpend, FRIENDLY_CAPACITY_MESSAGE } from './security/costTracker.js'
 import { LIMITS, tooLong } from './security/limits.js'
+import type OpenAI from 'openai'
 
 const app = express()
 const PORT = config.port
@@ -201,6 +203,48 @@ Answer in 3-6 sentences. Be specific about the model the user provided — refer
   }
 })
 
+// ── Helper: constrained JSON completion with one retry + failure logging ──────
+// Calls the model with response_format: json_object + low temperature, strips any
+// stray markdown fences as a fallback, and parses the result. If parsing fails,
+// retries the exact same request once. If it still fails, logs the endpoint name
+// and a snippet of the raw output (instead of failing silently) and returns null
+// so the caller can fall back to its existing safe default (empty array / 500).
+async function completeJson<T>(
+  client: OpenAI,
+  model: string,
+  prompt: string,
+  maxTokens: number,
+  endpointName: string,
+): Promise<T | null> {
+  const attempt = async (): Promise<{ parsed: T; raw: string } | { parsed: null; raw: string }> => {
+    const completion = await client.chat.completions.create({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      stream: false,
+    })
+    const raw = completion.choices[0]?.message?.content?.trim() ?? ''
+    recordSpend(prompt.length, raw.length)
+    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
+    try {
+      return { parsed: JSON.parse(clean) as T, raw }
+    } catch {
+      return { parsed: null, raw }
+    }
+  }
+
+  const first = await attempt()
+  if (first.parsed !== null) return first.parsed
+
+  const second = await attempt()
+  if (second.parsed !== null) return second.parsed
+
+  console.error(`[API] ${endpointName}: JSON parse failed after retry. Raw output (first 500 chars):`, second.raw.slice(0, 500))
+  return null
+}
+
 // ── REST: AI system design suggestions ───────────────────────────────────────
 app.post('/api/suggest-systems', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
   const { input } = req.body as { input?: string }
@@ -219,18 +263,10 @@ Return ONLY valid JSON (no markdown):
   try {
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 300,
-      stream: false,
-    })
-    const raw = completion.choices[0]?.message?.content?.trim() ?? ''
-    recordSpend(prompt.length, raw.length)
-    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
-    const parsed = JSON.parse(clean)
-    res.json({ suggestions: parsed.suggestions ?? [] })
-  } catch {
+    const parsed = await completeJson<{ suggestions?: string[] }>(client, 'google/gemini-2.5-flash', prompt, 300, 'suggest-systems')
+    res.json({ suggestions: parsed?.suggestions ?? [] })
+  } catch (err) {
+    console.error('[API] Suggest systems error:', err)
     res.status(500).json({ suggestions: [] })
   }
 })
@@ -444,16 +480,11 @@ Return ONLY valid JSON (no markdown):
   try {
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2500,
-      stream: false,
-    })
-    const raw = completion.choices[0]?.message?.content?.trim() ?? ''
-    recordSpend(prompt.length, raw.length)
-    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
-    const parsed = JSON.parse(clean)
+    const parsed = await completeJson<{ questions?: QuizQuestion[] }>(client, 'google/gemini-2.5-flash', prompt, 2500, 'generate-quiz-questions')
+    if (!parsed) {
+      res.status(500).json({ error: 'Failed to generate questions' })
+      return
+    }
     const questions = parsed.questions ?? []
     // Persist to DB for future requests
     await saveGeneratedQuestions(topicSlug, questions)
@@ -524,16 +555,11 @@ Rules:
   try {
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 1200,
-      stream: false,
-    })
-    const raw = completion.choices[0]?.message?.content?.trim() ?? ''
-    recordSpend(prompt.length, raw.length)
-    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
-    const parsed = JSON.parse(clean)
+    const parsed = await completeJson<{ path: unknown }>(client, 'google/gemini-2.5-flash', prompt, 1200, 'trace-full')
+    if (!parsed) {
+      res.status(500).json({ error: 'Analysis failed' })
+      return
+    }
     res.json(parsed)
   } catch (err) {
     console.error('[API] Full trace error:', err)
@@ -594,16 +620,21 @@ Return ONLY valid JSON (no markdown):
   try {
     const { default: OpenAI } = await import('openai')
     const client = new OpenAI({ baseURL: 'https://openrouter.ai/api/v1', apiKey: process.env.OPENROUTER_API_KEY ?? '' })
-    const completion = await client.chat.completions.create({
-      model: 'google/gemini-2.5-flash',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 400,
-      stream: false,
-    })
-    const raw = completion.choices[0]?.message?.content?.trim() ?? ''
-    recordSpend(prompt.length, raw.length)
-    const clean = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim()
-    const parsed = JSON.parse(clean)
+    const parsed = await completeJson<{ explanation: string; nextSteps: unknown[]; isTerminal: boolean }>(
+      client, 'google/gemini-2.5-flash', prompt, 400, 'trace-step',
+    )
+    if (!parsed) {
+      res.status(500).json({
+        explanation: 'Could not generate explanation. Check the server logs.',
+        nextSteps: outgoing.map(e => ({
+          label: `→ ${nodes.find(n => n.id === e.to)?.label ?? e.to}`,
+          targetNodeId: e.to,
+          edgeId: e.id,
+        })),
+        isTerminal: outgoing.length === 0,
+      })
+      return
+    }
     if (outgoing.length === 0) parsed.isTerminal = true
     res.json(parsed)
   } catch (err) {
