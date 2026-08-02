@@ -4,9 +4,10 @@
 > The hardened server now refuses to boot without valid config, so do these first.
 > Pushing `main` triggers your Vercel deploy — do it LAST, after 1–4 below.
 
-## 1. OpenRouter — hard credit cap (2 min, do this first)
-- [ ] In the OpenRouter dashboard, set a hard credit/spend limit on your API key.
-      This is the provider-level backstop under the app's own cost circuit-breaker.
+## 1. DeepSeek — fund with a small prepaid balance (do this first)
+- [ ] Create a DeepSeek API key and top up a SMALL prepaid balance.
+      DeepSeek is prepaid, so the balance itself is your hard spend ceiling — the
+      app's own MAX_DAILY_COST_USD breaker sits on top of it.
 
 ## 2. Server environment variables (on your server host)
 Required — the server exits at boot if any are missing or insecure:
@@ -16,7 +17,9 @@ Required — the server exits at boot if any are missing or insecure:
 - [ ] `SUPABASE_SERVICE_ROLE_KEY`
 - [ ] `GOOGLE_CLIENT_ID`
 - [ ] `CLIENT_URL` = your exact production client origin (used for strict CORS)
-- [ ] `OPENROUTER_API_KEY`
+- [ ] `DEEPSEEK_API_KEY` = your DeepSeek key (powers all AI). Defaults use
+      `LLM_BASE_URL=https://api.deepseek.com` and `LLM_MODEL=deepseek-chat` —
+      only set those to switch providers. (`OPENROUTER_API_KEY` still works as a fallback.)
 - [ ] `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (email)
 
 Optional (sane defaults exist — see `server/.env.example`):
@@ -38,5 +41,5 @@ Optional (sane defaults exist — see `server/.env.example`):
 - [ ] Smoke-test prod: sign in works; an unauthenticated API call returns 401; a session runs end-to-end
 
 ---
-*Full context: PRODUCTION_PLAN.md (§1–§2). Known follow-ups after deploy: lazy-init the OpenAI
-client in orchestrator.ts so an empty OPENROUTER_API_KEY doesn't crash boot.*
+*Full context: PRODUCTION_PLAN.md (§1–§2). The LLM client is now lazy-initialized, so a
+missing AI key degrades AI features instead of crashing boot.*
