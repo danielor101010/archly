@@ -73,6 +73,7 @@ interface GraphState {
   setNodeParent: (id: string, parentId: string, relativePos: { x: number; y: number }) => void
   clearNodeParent: (id: string, absolutePos: { x: number; y: number }) => void
   triggerFitView: () => void
+  applyLayout: (nodes: Node<SystemNodeData>[]) => void
   clearFitView: () => void
   clearStressMetrics: () => void
   highlightNode: (id: string) => void
@@ -320,6 +321,7 @@ export const useGraphStore = create<GraphState>()(
       },
 
       triggerFitView: () => set({ pendingFitView: true }),
+      applyLayout: (layouted) => set({ nodes: layouted, viewingSnapshotIdx: null, pendingFitView: true }),
       clearFitView: () => set({ pendingFitView: false }),
 
       clearStressMetrics: () => {

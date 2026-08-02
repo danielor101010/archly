@@ -1,6 +1,7 @@
-import { ZoomIn, ZoomOut, Maximize2, Trash2, ChevronLeft, ChevronRight, Expand, Shrink, Layers, Play, Square } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize2, Trash2, ChevronLeft, ChevronRight, Expand, Shrink, Layers, Play, Square, LayoutGrid } from 'lucide-react'
 import { useReactFlow } from 'reactflow'
 import { useGraphStore } from '../../stores/graphStore'
+import { layoutGraph } from './autoLayout'
 import type { UseRequestTraceReturn } from './useRequestTrace'
 
 interface CanvasToolbarProps {
@@ -30,7 +31,8 @@ const Btn = ({ onClick, title, active, danger, children }: {
 
 export const CanvasToolbar = ({ nodeCount, onTogglePanel, panelOpen, trace }: CanvasToolbarProps) => {
   const { zoomIn, zoomOut, fitView } = useReactFlow()
-  const { clearGraph, snapshots, viewingSnapshotIdx, navigateSnapshot, isCanvasFullscreen, setCanvasFullscreen } = useGraphStore()
+  const { clearGraph, snapshots, viewingSnapshotIdx, navigateSnapshot, isCanvasFullscreen, setCanvasFullscreen, nodes, edges, applyLayout } = useGraphStore()
+  const tidy = () => applyLayout(layoutGraph(nodes, edges))
 
   const isViewingHistory = viewingSnapshotIdx !== null
   const currentSnap = isViewingHistory ? viewingSnapshotIdx! : snapshots.length - 1
@@ -61,6 +63,7 @@ export const CanvasToolbar = ({ nodeCount, onTogglePanel, panelOpen, trace }: Ca
             <Btn onClick={onTogglePanel} active={panelOpen} title="Components">
               <Layers size={11} />
             </Btn>
+            <Btn onClick={tidy} title="Auto-arrange layout"><LayoutGrid size={11} /></Btn>
           </>
         )}
         {hasHistory && (
@@ -108,6 +111,11 @@ export const CanvasToolbar = ({ nodeCount, onTogglePanel, panelOpen, trace }: Ca
           <div className="w-px h-4 bg-white/8" />
           <Btn onClick={onTogglePanel} active={panelOpen} title="Components">
             <Layers size={11} />
+          </Btn>
+          <div className="w-px h-4 bg-white/8" />
+          <Btn onClick={tidy} title="Auto-arrange layout">
+            <LayoutGrid size={11} />
+            <span className="ml-1 text-[11px]">Tidy</span>
           </Btn>
         </div>
       )}
