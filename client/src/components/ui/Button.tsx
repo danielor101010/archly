@@ -6,8 +6,8 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants = {
-  primary: 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20',
-  ghost: 'bg-white/5 hover:bg-white/10 text-zinc-300 hover:text-white border border-white/10',
+  primary: 'bg-accent hover:bg-accent-hover text-white',
+  ghost: 'bg-surface-elevated hover:bg-surface-elevated text-text-secondary hover:text-text-primary border border-border-default hover:border-border-strong',
   danger: 'bg-red-600/20 hover:bg-red-600/30 text-red-400 border border-red-500/30',
 }
 
@@ -21,7 +21,7 @@ export const Button = ({ variant = 'ghost', size = 'md', className, children, ..
   <button
     {...props}
     className={cn(
-      'inline-flex items-center gap-2 rounded-lg font-medium transition-all duration-150',
+      'inline-flex items-center gap-2 rounded-md font-medium transition-colors duration-150',
       'disabled:opacity-50 disabled:cursor-not-allowed',
       variants[variant], sizes[size], className
     )}
