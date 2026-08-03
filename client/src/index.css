@@ -56,8 +56,10 @@
   --border-default:   rgba(255,255,255,0.12);
   --border-strong:    rgba(255,255,255,0.2);
 
-  --accent:           #6366f1; /* indigo-500 */
-  --accent-hover:     #4f46e5; /* indigo-600 */
+  --accent:           #0ea5e9; /* sky-500 — "Clean Engineering" accent (replaces indigo/purple) */
+  --accent-hover:     #0284c7; /* sky-600 */
+  --accent-subtle:        rgba(14,165,233,0.10);
+  --accent-subtle-border: rgba(14,165,233,0.28);
 }
 
 .light {
@@ -80,8 +82,19 @@
   --border-default:   rgba(0,0,0,0.16);
   --border-strong:    rgba(0,0,0,0.20);
 
-  --accent:           #4f46e5; /* indigo-600 — darkened for contrast on white */
-  --accent-hover:     #4338ca; /* indigo-700 */
+  --accent:           #0284c7; /* sky-600 — darkened for contrast on white */
+  --accent-hover:     #0369a1; /* sky-700 */
+  --accent-subtle:        rgba(2,132,199,0.08);
+  --accent-subtle-border: rgba(2,132,199,0.22);
+}
+
+/* Blueprint grid texture — a faint dotted graph-paper backdrop for surfaces that
+   ARE literally a design canvas (the product-preview mock, an empty canvas
+   state), never as generic page/marketing-copy decoration. Wide spacing + the
+   subtle border token keep it closer to "graph paper" than "AI-template dots". */
+.bg-blueprint-grid {
+  background-image: radial-gradient(circle, var(--border-subtle) 1px, transparent 1px);
+  background-size: 32px 32px;
 }
 
 /* ════════════════════════════════════════════════════════════════════════

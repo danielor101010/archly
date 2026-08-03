@@ -40,10 +40,12 @@ export default {
         accent: {
           DEFAULT: 'var(--accent)',   // bg-accent / text-accent / border-accent
           hover: 'var(--accent-hover)',
-          primary: '#6366f1',
-          secondary: '#8b5cf6',
-          glow: 'rgba(99,102,241,0.3)',
         },
+        // Pre-mixed low-opacity accent fills/borders (badges, icon chips, hover
+        // washes). CSS-variable colors can't reliably take Tailwind's `/opacity`
+        // modifier, so the alpha is baked into the variable itself instead.
+        'accent-soft':        'var(--accent-subtle)',
+        'accent-soft-border': 'var(--accent-subtle-border)',
         node: {
           healthy: '#22c55e',
           elevated: '#f59e0b',
