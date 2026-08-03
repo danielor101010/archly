@@ -42,7 +42,7 @@ if (process.env.JWT_SECRET === DEV_SECRET) {
 }
 
 // Warn-only: the app boots without these but the affected features degrade.
-const resolvedLlmKey = process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? ''
+const resolvedLlmKey = process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? ''
 if (!resolvedLlmKey) {
   console.warn('[config] WARNING: no LLM API key set (DEEPSEEK_API_KEY) — AI features will fail.')
 }
@@ -59,7 +59,9 @@ export const config = {
 
   // LLM provider — DeepSeek by default (OpenAI-compatible API). Falls back to an
   // OpenRouter key if that's all that's set; base URL + model overridable via env.
-  llmApiKey: process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '',
+  // Generic LLM key wins if set — lets any OpenAI-compatible provider (Groq,
+  // Gemini, …) be used without clobbering the DeepSeek/OpenRouter keys.
+  llmApiKey: process.env.LLM_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '',
   llmBaseUrl: process.env.LLM_BASE_URL ?? 'https://api.deepseek.com',
   llmModel: process.env.LLM_MODEL ?? 'deepseek-chat',
 
