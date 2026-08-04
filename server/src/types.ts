@@ -75,6 +75,11 @@ export interface Session {
   // chat), surfaced to the AI on the next turn so it can react to what they drew.
   recentManualEdits: string[]
   phase: SessionPhase
+  // session.messages.length at the moment of the most recent graph mutation
+  // (any source — chat-driven or manual canvas edit). Lets prompts.ts compute
+  // "how many exchanges since the diagram last changed" as a concrete, checkable
+  // proxy for topic exhaustion in deep dive — see buildInterviewContext.
+  lastMutationAtMessageCount: number
 }
 
 export interface ScoreState {

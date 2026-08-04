@@ -40,6 +40,7 @@ class SessionStore {
       customProblemDesc: customProblem?.description,
       recentManualEdits: [],
       phase: 'requirements',
+      lastMutationAtMessageCount: 0,
     }
     this.sessions.set(session.id, session)
     return session
@@ -60,6 +61,12 @@ class SessionStore {
     session.lastActivity = Date.now()
   }
 
+  /** Stamp the current message count as "the diagram just changed" — see the
+   * `lastMutationAtMessageCount` field doc in types.ts. */
+  private markMutation(session: Session): void {
+    session.lastMutationAtMessageCount = session.messages.length
+  }
+
   addMessage(sessionId: string, msg: Omit<Message, 'id' | 'timestamp'>): void {
     const session = this.sessions.get(sessionId)
     if (!session) return
@@ -75,6 +82,7 @@ class SessionStore {
     if (isNew && Object.keys(session.graph.nodes).length >= LIMITS.maxNodes) return false
     session.graph.nodes[node.id] = node
     this.touch(session)
+    this.markMutation(session)
     return true
   }
 
@@ -86,6 +94,7 @@ class SessionStore {
     if (isNew && Object.keys(session.graph.edges).length >= LIMITS.maxEdges) return false
     session.graph.edges[edge.id] = edge
     this.touch(session)
+    this.markMutation(session)
     return true
   }
 
@@ -94,6 +103,7 @@ class SessionStore {
     if (!session) return
     delete session.graph.edges[edgeId]
     this.touch(session)
+    this.markMutation(session)
   }
 
   /** Record a note of a direct-on-canvas edit (capped; oldest dropped past 12). */

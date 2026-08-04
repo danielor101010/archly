@@ -203,6 +203,21 @@ ${buildLevelInstruction(session.userLevel)}`
   const msgCount = session.messages.length
   const isStressTest = session.messages.some(m => m.content.startsWith('[STRESS_TEST:'))
 
+  // Topic-pacing signal: how many exchanges since the diagram last actually
+  // changed. A concrete, checkable proxy for "this narrow thread has been
+  // mined thoroughly" — cheaper and far more reliable than asking the model to
+  // self-judge repetitiveness from raw conversation vibes alone. Only fires in
+  // deep dive, where the model is meant to be PROBING an already-drawn design,
+  // not eliciting new components. Interview mode decides and pivots on its own
+  // (matches "skeptic, not cheerleader" — no permission-asking); see
+  // buildPracticeContext for practice mode's explicit check-in instead.
+  const exchangesSinceLastMutation = Math.max(0, Math.floor((msgCount - session.lastMutationAtMessageCount) / 2))
+  if ((isStressTest || nodes.length >= 4) && exchangesSinceLastMutation >= 3) {
+    instructions.push(
+      `- TOPIC DEPTH: the diagram hasn't changed in ${exchangesSinceLastMutation} exchanges — you've likely mined the current thread thoroughly. Do NOT ask another follow-up on the same narrow point. Pivot to a new, unexplored dimension of the system (a different component, failure mode, or scale axis), or move toward wrapping up if the design is comprehensive. Decide and act — do not ask the candidate's permission.`
+    )
+  }
+
   const levelInstruction = buildLevelInstruction(session.userLevel)
 
   const customDesc = session.customProblemTitle
@@ -299,6 +314,14 @@ ${buildLevelInstruction(session.userLevel)}`
     session.phase = 'requirements'
   }
 
+  // Topic-pacing signal — see buildInterviewContext for the full rationale.
+  // Practice mode's supportive-coach tone means it EXPLICITLY ASKS rather than
+  // silently deciding: give the user agency over whether to go deeper or move on.
+  const exchangesSinceLastMutation = Math.max(0, Math.floor((msgCount - session.lastMutationAtMessageCount) / 2))
+  const topicDepthNote = (isStressTest || nodes.length >= 4) && exchangesSinceLastMutation >= 3
+    ? `\n⚠️ TOPIC DEPTH: the diagram hasn't changed in ${exchangesSinceLastMutation} exchanges — the user has likely explored this thread thoroughly. Ask them directly and warmly: do they want to keep going deeper here, or move on to a different part of the design? Wait for their answer before proceeding either way.\n`
+    : ''
+
   return `CURRENT SESSION STATE:
 Problem: ${session.problemId}
 Time elapsed: ${timeElapsed} minutes
@@ -309,7 +332,7 @@ ${nodes.length ? nodes.map((n) => `  id="${n.id}" type="${n.type}" label="${n.la
 
 Existing edges:
 ${edges.length ? edges.map((e) => `  id="${e.id}" from="${e.from}" to="${e.to}"`).join('\n') : '  (none yet)'}
-${session.recentManualEdits.length ? `\n⚠️ The user just edited the canvas DIRECTLY (not through chat): ${session.recentManualEdits.join('; ')}. React to these specific changes — acknowledge good moves and probe questionable ones.\n` : ''}
+${session.recentManualEdits.length ? `\n⚠️ The user just edited the canvas DIRECTLY (not through chat): ${session.recentManualEdits.join('; ')}. React to these specific changes — acknowledge good moves and probe questionable ones.\n` : ''}${topicDepthNote}
 Be encouraging. Help them build a complete, well-designed system step by step.
 
 ${levelInstruction}${customDesc}`
