@@ -1,4 +1,5 @@
 import { getSubscription, countSessionsThisMonth } from '../db.js'
+import { config } from '../config.js'
 
 // ── Entitlements ─────────────────────────────────────────────────────────────
 // Free tier: 3 practice/interview sessions per calendar month, no solution
@@ -37,6 +38,9 @@ export function decideEntitlement(plan: Plan, feature: Feature, sessionsUsed: nu
 
 export async function checkEntitlement(userId: string, feature: Feature): Promise<EntitlementResult> {
   const plan = await getPlan(userId)
+  // Kill switch — see config.ts. Off by default so shipping this code can't
+  // itself start blocking existing users before billing is actually live.
+  if (!config.billingEnforced) return { allowed: true, plan }
   const sessionsUsed = plan === 'free' && feature === 'session' ? await countSessionsThisMonth(userId) : 0
   return decideEntitlement(plan, feature, sessionsUsed)
 }

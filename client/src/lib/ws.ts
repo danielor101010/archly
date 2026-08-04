@@ -5,6 +5,7 @@ import { useScoreStore } from '../stores/scoreStore'
 import { useSessionStore } from '../stores/sessionStore'
 import { useBoardStore } from '../stores/boardStore'
 import { useUserStore } from '../stores/userStore'
+import { useBillingStore, type PaywallFeature } from '../stores/billingStore'
 
 type WSMessage = { type: string; [key: string]: unknown }
 
@@ -201,6 +202,10 @@ class WSClient {
         useUserStore.getState().setCvAnalysis(skills, problems)
         break
       }
+      case 'PAYWALL':
+        chatStore.finalizeStream()
+        useBillingStore.getState().openPaywall(msg.feature as PaywallFeature)
+        break
       case 'ERROR':
         console.error('[WS] Server error:', msg.message)
         chatStore.finalizeStream()

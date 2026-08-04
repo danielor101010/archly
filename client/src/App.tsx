@@ -19,13 +19,17 @@ import { LanguageQuizPage } from './pages/LanguageQuizPage'
 import { CvInterviewPage } from './pages/CvInterviewPage'
 import { CodingInterviewPage } from './pages/CodingInterviewPage'
 import ModelingPage from './pages/ModelingPage'
+import { PricingPage } from './pages/PricingPage'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { PaywallModal } from './features/billing/PaywallModal'
 
 export default function App() {
   return (
     <BrowserRouter>
+      <PaywallModal />
       <Routes>
         <Route path="/" element={<Landing />} />
+        <Route path="/pricing" element={<PricingPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/learn" element={<TopicList />} />

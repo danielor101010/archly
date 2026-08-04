@@ -52,6 +52,9 @@ if (!process.env.BREVO_API_KEY) {
 if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET) {
   console.warn('[config] WARNING: LEMONSQUEEZY_WEBHOOK_SECRET is not set — the billing webhook will reject all events until it is.')
 }
+if (process.env.BILLING_ENFORCED !== 'true') {
+  console.warn('[config] Billing enforcement is OFF (BILLING_ENFORCED != "true") — all entitlement checks currently allow everything.')
+}
 
 export const config = {
   // Required (validated above)
@@ -74,6 +77,12 @@ export const config = {
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com',
   clientUrl: process.env.CLIENT_URL ?? '',
   lemonSqueezyWebhookSecret: process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? '',
+  // Defaults OFF on purpose: deploying the billing code must not, by itself,
+  // start blocking solution reveal / CV features for every existing user (no
+  // one has a 'pro' row yet and checkout isn't live). Flip to 'true' once
+  // Lemon Squeezy is configured and you've decided how to handle any users who
+  // were using these features for free before enforcement turned on.
+  billingEnforced: process.env.BILLING_ENFORCED === 'true',
 
   // Server
   port: num('PORT', 3001),
