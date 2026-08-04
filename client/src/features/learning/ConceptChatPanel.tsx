@@ -31,6 +31,18 @@ export const ConceptChatPanel = ({ topicSlug, topicTitle }: ConceptChatPanelProp
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isStreaming])
 
+  // The browser auto-blurs a focused element the instant it becomes `disabled`
+  // (streaming starts) and focus never returns on its own once it re-enables —
+  // re-focus specifically on that disabled -> enabled transition.
+  const isDisabled = isStreaming || !sessionId
+  const wasDisabled = useRef(isDisabled)
+  useEffect(() => {
+    if (wasDisabled.current && !isDisabled) {
+      textareaRef.current?.focus()
+    }
+    wasDisabled.current = isDisabled
+  }, [isDisabled])
+
   const startConceptSession = useCallback(() => {
     if (sessionStarted) return
     setSessionStarted(true)
@@ -172,7 +184,7 @@ export const ConceptChatPanel = ({ topicSlug, topicTitle }: ConceptChatPanelProp
               <div className="px-3 pb-3 pt-2 shrink-0 border-t border-white/8">
                 <div className={`
                   flex items-end gap-2 bg-white/5 border rounded-xl px-3 py-2 transition-all
-                  ${isStreaming || !sessionId ? 'border-white/5 opacity-60' : 'border-white/10 focus-within:border-indigo-500/40'}
+                  ${isDisabled ? 'border-white/5 opacity-60' : 'border-white/10 focus-within:border-indigo-500/40'}
                 `}>
                   <textarea
                     ref={textareaRef}
@@ -180,14 +192,14 @@ export const ConceptChatPanel = ({ topicSlug, topicTitle }: ConceptChatPanelProp
                     onChange={handleInput}
                     onKeyDown={handleKey}
                     placeholder={isStreaming ? 'AI is thinking…' : 'Ask anything about this topic…'}
-                    disabled={isStreaming || !sessionId}
+                    disabled={isDisabled}
                     rows={1}
                     className="flex-1 bg-transparent text-zinc-200 text-sm placeholder-zinc-600 resize-none outline-none leading-relaxed min-h-[20px] max-h-[100px]"
                     style={{ scrollbarWidth: 'none' }}
                   />
                   <button
                     onClick={submit}
-                    disabled={isStreaming || !sessionId || !input.trim()}
+                    disabled={isDisabled || !input.trim()}
                     className="shrink-0 w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-30 flex items-center justify-center transition-colors"
                   >
                     <Send size={12} className="text-white" />

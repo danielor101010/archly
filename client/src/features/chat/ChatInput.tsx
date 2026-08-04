@@ -1,4 +1,4 @@
-﻿import { useState, useRef, type KeyboardEvent } from 'react'
+﻿import { useState, useRef, useEffect, type KeyboardEvent } from 'react'
 import { Send } from 'lucide-react'
 import { useChatStore } from '../../stores/chatStore'
 import { useSessionStore } from '../../stores/sessionStore'
@@ -47,6 +47,19 @@ export const ChatInput = ({ mode }: ChatInputProps) => {
   }
 
   const isDisabled = isStreaming || !sessionId
+
+  // The browser auto-blurs a focused element the instant it becomes `disabled`
+  // (streaming starts) — and focus never comes back on its own once it
+  // re-enables. Re-focus specifically on that disabled -> enabled transition so
+  // the user can keep typing immediately after the AI finishes responding,
+  // without clicking back into the box every time.
+  const wasDisabled = useRef(isDisabled)
+  useEffect(() => {
+    if (wasDisabled.current && !isDisabled) {
+      textareaRef.current?.focus()
+    }
+    wasDisabled.current = isDisabled
+  }, [isDisabled])
 
   return (
     <div className="px-4 pb-4 pt-2 shrink-0">
