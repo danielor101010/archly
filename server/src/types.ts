@@ -17,6 +17,13 @@ export type NodeHealth = 'healthy' | 'elevated' | 'stressed' | 'critical' | 'dea
 
 export type SessionMode = 'practice' | 'interview' | 'cv-interview' | 'coding' | 'concept'
 
+// Explicit interview/practice phase, tagged once per turn by prompts.ts instead
+// of being silently re-derived (and potentially drifting) on every prompt build.
+// Also gates whether the graph-mutation extraction call runs this turn (see
+// orchestrator.ts) — no canvas mutations before the candidate is describing
+// components.
+export type SessionPhase = 'requirements' | 'api_design' | 'data_models' | 'high_level_design' | 'deep_dive'
+
 export interface GraphNode {
   id: string
   type: NodeType
@@ -67,6 +74,7 @@ export interface Session {
   // Human-readable notes of edits the user made directly on the canvas (not via
   // chat), surfaced to the AI on the next turn so it can react to what they drew.
   recentManualEdits: string[]
+  phase: SessionPhase
 }
 
 export interface ScoreState {

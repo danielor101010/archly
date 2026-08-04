@@ -21,6 +21,8 @@ import {
 import { parseCanvasCommands, CanvasCommand } from './architectureParser.js'
 import { validateCanvasCommands } from './validateCommands.js'
 import { getLLMClient, LLM_MODEL } from './llm.js'
+import { extractGraphMutations, phaseAllowsMutations } from './mutationExtractor.js'
+import { solutionCacheKey, getCachedSolution, setCachedSolution } from './solutionCache.js'
 
 function logRejected(source: string, rejected: ReturnType<typeof validateCanvasCommands>['rejected']): void {
   for (const r of rejected) {
@@ -109,8 +111,18 @@ export async function streamAIResponse(
       callbacks.onTextDelta(delta)
     }
 
-    const parsed = parseCanvasCommands(fullText)
-    const { valid, rejected } = validateCanvasCommands(parsed, Object.keys(session.graph.nodes))
+    // Primary mutation source: the dedicated structured-JSON call (see
+    // mutationExtractor.ts) — the persona prompt no longer asks the model to
+    // interleave <canvas:...> into its prose. The regex parse below is kept as
+    // a zero-cost safety net in case the model emits inline tags out of habit
+    // anyway, or the extraction call fails; validateCanvasCommands naturally
+    // dedupes/rejects across both sources since it just sees one combined list.
+    let allCommands = parseCanvasCommands(fullText)
+    if (!solutionShown && phaseAllowsMutations(session)) {
+      const extracted = await extractGraphMutations(session, userMessage, fullText)
+      allCommands = allCommands.concat(extracted)
+    }
+    const { valid, rejected } = validateCanvasCommands(allCommands, Object.keys(session.graph.nodes))
     logRejected('chat', rejected)
     for (const cmd of valid) {
       console.log('[AI] Canvas command:', cmd.type, cmd.node?.id ?? cmd.nodeId ?? '')
@@ -211,6 +223,17 @@ export async function streamSolutionResponse(
   customTitle?: string,
   customDesc?: string
 ): Promise<void> {
+  const cacheKey = solutionCacheKey(problemId, customTitle)
+  const cached = getCachedSolution(cacheKey)
+  if (cached) {
+    // Replay instantly — zero LLM calls. The client's streaming UI accepts a
+    // single large delta the same way it accepts many small ones.
+    callbacks.onTextDelta(cached.text)
+    for (const cmd of cached.commands) callbacks.onCanvasCommand(cmd)
+    callbacks.onComplete(cached.text)
+    return
+  }
+
   const hasHardcodedTemplate = !!SOLUTION_CANVAS_TEMPLATES[problemId]
   // Allow AI canvas commands for: custom problems AND any problem without a hardcoded template
   const useAICanvas = !hasHardcodedTemplate
@@ -232,13 +255,11 @@ export async function streamSolutionResponse(
       callbacks.onTextDelta(delta)
     }
 
+    let dispatchedCommands: CanvasCommand[]
     const template = SOLUTION_CANVAS_TEMPLATES[problemId]
     if (template) {
       // Hardcoded template for 5 original problems — precise, prevents duplicates
-      const templateCommands = parseCanvasCommands(template)
-      for (const cmd of templateCommands) {
-        callbacks.onCanvasCommand(cmd)
-      }
+      dispatchedCommands = parseCanvasCommands(template)
     } else {
       // All other problems (custom CV or any of the 20+ new problems):
       // use AI-generated canvas commands from the solution text. Validated — the
@@ -246,11 +267,13 @@ export async function streamSolutionResponse(
       const parsed = parseCanvasCommands(fullText)
       const { valid, rejected } = validateCanvasCommands(parsed, [])
       logRejected('solution', rejected)
-      for (const cmd of valid) {
-        callbacks.onCanvasCommand(cmd)
-      }
+      dispatchedCommands = valid
+    }
+    for (const cmd of dispatchedCommands) {
+      callbacks.onCanvasCommand(cmd)
     }
 
+    setCachedSolution(cacheKey, { text: fullText, commands: dispatchedCommands })
     callbacks.onComplete(fullText)
   } catch (err) {
     callbacks.onError(err instanceof Error ? err : new Error(String(err)))

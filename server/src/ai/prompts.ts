@@ -62,20 +62,9 @@ BEHAVIORAL RULES — CRITICAL, READ CAREFULLY:
 - Be a skeptic, not a cheerleader. Find the flaw in every design decision.
 - Ask ONE sharp probing question at the end of each response.
 
-CANVAS COMMANDS — only in Step 3+:
-When user mentions a component: <canvas:add_node id="unique-id" type="node_type" label="Node Label"/>
-When user describes a connection: <canvas:add_edge id="unique-id" from="source-id" to="target-id" label="optional"/>
-When highlighting a weakness: <canvas:update_node id="node-id" health="critical"/>
-When user asks to remove a component: <canvas:remove_node id="existing-node-id"/>
+ARCHITECTURE DRAWING: A separate system reads this conversation after each exchange and updates the architecture diagram automatically — it adds nodes/edges for components the candidate describes and reflects health/failure states you raise. You do NOT draw the canvas yourself: do not attempt to emit <canvas:...> tags in your reply. Just discuss the architecture naturally in plain language; the diagram stays in sync on its own.
 
-Node types: client, cdn, load_balancer, api_gateway, api_service, cache, message_queue, database, search_cluster, object_storage, notification_service, websocket_gateway, k8s_cluster
-
-CRITICAL CANVAS RULES:
-- NEVER emit canvas commands in Steps 1-2
-- NEVER re-add a node that already exists (check "Existing node IDs" in context)
-- ONLY add nodes for components the candidate explicitly describes
-- Use exact existing IDs when referencing nodes in edges or updates
-- When user mentions Kubernetes or K8s: FIRST add the cluster node with type="k8s_cluster", THEN add the service nodes that run inside it using the parent attribute: <canvas:add_node id="api1" type="api_service" label="API Service" parent="k8s-cluster-id"/>. Child nodes appear visually inside the cluster container.
+Node types (for consistent terminology): client, cdn, load_balancer, api_gateway, api_service, cache, message_queue, database, search_cluster, object_storage, notification_service, websocket_gateway, k8s_cluster
 
 HINT MODE: If the user message is exactly "[HINT_REQUEST]", give a 2-3 sentence nudge that points thinking in the right direction without revealing the full answer. Be Socratic — ask a guiding question rather than stating the solution. Do not add canvas commands in a hint response.
 
@@ -132,20 +121,9 @@ BEHAVIORAL RULES — CRITICAL, READ CAREFULLY:
 - You are a coach who makes the user THINK, not a parrot who summarizes what they said.
 - End every response with exactly ONE question that exposes a gap or forces deeper thinking.
 
-CANVAS COMMANDS — only in Phase 3+:
-<canvas:add_node id="unique-id" type="node_type" label="Node Label"/>
-<canvas:add_edge id="unique-id" from="source-id" to="target-id" label="optional"/>
-<canvas:update_node id="node-id" health="stressed"/>
-<canvas:remove_node id="existing-node-id"/>  ← use when user asks to remove/delete a component
+ARCHITECTURE DRAWING: A separate system reads this conversation after each exchange and updates the architecture diagram automatically — it adds nodes/edges for components the user describes and reflects health/failure states you raise. You do NOT draw the canvas yourself: do not attempt to emit <canvas:...> tags in your reply. Just discuss the architecture naturally in plain language; the diagram stays in sync on its own.
 
-Node types: client, cdn, load_balancer, api_gateway, api_service, cache, message_queue, database, search_cluster, object_storage, notification_service, websocket_gateway, k8s_cluster
-
-CRITICAL CANVAS RULES:
-- NEVER emit canvas commands in Phase 1 or Phase 2
-- NEVER emit a canvas command for a node that already exists (check "Existing node IDs" in context)
-- NEVER proactively add a node — only when the user explicitly describes that component
-- Use the exact existing IDs when referencing existing nodes in edges
-- When user mentions Kubernetes or K8s: FIRST add the cluster node with type="k8s_cluster", THEN add the service nodes that run inside it using the parent attribute: <canvas:add_node id="api1" type="api_service" label="API Service" parent="k8s-cluster-id"/>. Child nodes appear visually inside the cluster container.
+Node types (for consistent terminology): client, cdn, load_balancer, api_gateway, api_service, cache, message_queue, database, search_cluster, object_storage, notification_service, websocket_gateway, k8s_cluster
 
 HINT MODE: If the user message is exactly "[HINT_REQUEST]", give a 2-3 sentence nudge that points thinking in the right direction without revealing the full answer. Be Socratic — ask a guiding question rather than stating the solution. Do not add canvas commands in a hint response.
 
@@ -231,18 +209,26 @@ ${buildLevelInstruction(session.userLevel)}`
     ? `\nCUSTOM PROBLEM: "${session.customProblemTitle}" — ${session.customProblemDesc ?? ''}`
     : ''
 
-  // Explicit phase detection — prevents AI from re-asking requirements mid-session
+  // Explicit phase detection — prevents AI from re-asking requirements mid-session.
+  // Tagged onto the session (not just a local string) so other code — the
+  // mutation-extraction gate in orchestrator.ts — can read it without
+  // re-deriving these same thresholds a second time.
   let currentStep: string
   if (isStressTest || nodes.length >= 4) {
     currentStep = `STEP 4 — DEEP DIVE (${nodes.length} components built). DO NOT ask for requirements, APIs, or data models. Probe failure modes, bottlenecks, and trade-offs. The candidate is in active architecture mode.`
+    session.phase = 'deep_dive'
   } else if (nodes.length >= 1) {
     currentStep = `STEP 3 — HIGH-LEVEL DESIGN (${nodes.length} component${nodes.length > 1 ? 's' : ''} drawn). Add nodes as described, probe each decision.`
+    session.phase = 'high_level_design'
   } else if (msgCount > 6) {
     currentStep = 'STEP 2.5 — DATA MODELS. Do NOT revisit requirements. Push for data entity definitions.'
+    session.phase = 'data_models'
   } else if (msgCount > 3) {
     currentStep = 'STEP 2 — API DESIGN. Requirements are done. Push for API endpoints.'
+    session.phase = 'api_design'
   } else {
     currentStep = 'STEP 1 — REQUIREMENTS. Push the candidate to list and clarify requirements.'
+    session.phase = 'requirements'
   }
 
   return `CURRENT SESSION STATE:
@@ -295,16 +281,22 @@ ${buildLevelInstruction(session.userLevel)}`
     ? `\nCUSTOM PROBLEM: "${session.customProblemTitle}" — ${session.customProblemDesc ?? ''}`
     : ''
 
-  // Explicit phase detection so AI never re-asks requirements mid-session
+  // Explicit phase detection so AI never re-asks requirements mid-session.
+  // Practice merges API design + data models into one combined step; tagged as
+  // 'api_design' since the mutation gate treats both pre-drawing phases alike.
   let currentPhase: string
   if (isStressTest || nodes.length >= 4) {
     currentPhase = `PHASE 4 — DEEP DIVE (${nodes.length} components built). DO NOT ask for requirements, APIs, or data models. Focus exclusively on probing failure modes, scalability bottlenecks, and architecture decisions. The user is well past design setup.`
+    session.phase = 'deep_dive'
   } else if (nodes.length >= 1) {
     currentPhase = `PHASE 3 — HIGH-LEVEL ARCHITECTURE (${nodes.length} component${nodes.length > 1 ? 's' : ''} drawn). Add more components as the user describes them. Probe each decision.`
+    session.phase = 'high_level_design'
   } else if (msgCount > 6) {
     currentPhase = 'PHASE 2/2.5 — API DESIGN & DATA MODELS. Do NOT go back to requirements. Push the user toward defining endpoints and key data entities.'
+    session.phase = 'api_design'
   } else {
     currentPhase = 'PHASE 1 — REQUIREMENTS. Guide requirements gathering before anything else.'
+    session.phase = 'requirements'
   }
 
   return `CURRENT SESSION STATE:

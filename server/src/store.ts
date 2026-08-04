@@ -39,6 +39,7 @@ class SessionStore {
       customProblemTitle: customProblem?.title,
       customProblemDesc: customProblem?.description,
       recentManualEdits: [],
+      phase: 'requirements',
     }
     this.sessions.set(session.id, session)
     return session
