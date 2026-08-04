@@ -53,9 +53,25 @@ export function toCanvasCommand(m: RawMutation): CanvasCommand | null {
   }
 }
 
-/** Whether this session's current phase permits drawing at all. */
+/**
+ * Whether this session's current phase permits drawing at all.
+ *
+ * BUG HISTORY: this originally only allowed 'high_level_design'/'deep_dive'.
+ * But 'high_level_design' is only reached once nodes.length >= 1 (see
+ * prompts.ts phase derivation) — a deadlock where the FIRST node can never be
+ * created, since creating it requires a phase that itself requires a node to
+ * already exist. 'api_design' and 'data_models', by contrast, are reachable
+ * purely by message count with zero nodes, so excluding only 'requirements'
+ * (the one phase the original design most strongly insists on — "NEVER emit
+ * canvas commands in Steps 1-2" was never really honored past step 1 anyway)
+ * breaks the deadlock. The extraction prompt's own instructions ("only add a
+ * node for a component the candidate EXPLICITLY named... if nothing changed,
+ * return an empty mutations array") are the real correctness guard — this gate
+ * is just a cheap optimization to skip the call during pure early requirements
+ * chat, not a precision instrument, so it should err permissive.
+ */
 export function phaseAllowsMutations(session: Session): boolean {
-  return session.phase === 'high_level_design' || session.phase === 'deep_dive'
+  return session.phase !== 'requirements'
 }
 
 /**
