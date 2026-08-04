@@ -8,7 +8,7 @@ import { WebSocketServer } from 'ws'
 import { createWSHub } from './ws/hub.js'
 import { sessionStore } from './store.js'
 import { analyzeCvGap } from './ai/orchestrator.js'
-import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions } from './db.js'
+import { getUser, upsertUser, setWelcomed, isWelcomed, upsertQuizProgress, getQuizProgress, upsertSessionRecord, getSessionRecords, getGeneratedQuestions, saveGeneratedQuestions, upsertSubscription, countSessionsThisMonth } from './db.js'
 import type { QuizQuestion } from './db.js'
 import { verifyGoogleCredential, signToken, authenticate, AuthRequest } from './auth.js'
 import { llmRateLimit, authIpRateLimit } from './security/rateLimiter.js'
@@ -16,6 +16,8 @@ import { isOverDailyBudget, recordSpend, FRIENDLY_CAPACITY_MESSAGE } from './sec
 import { LIMITS, tooLong } from './security/limits.js'
 import type OpenAI from 'openai'
 import { getLLMClient, LLM_MODEL } from './ai/llm.js'
+import { verifyLemonSqueezySignature } from './billing/webhookVerify.js'
+import { getPlan, FREE_SESSIONS_PER_MONTH, checkEntitlement } from './billing/entitlements.js'
 
 const app = express()
 const PORT = config.port
@@ -42,6 +44,53 @@ app.use(cors({ origin: (origin, cb) => {
     cb(new Error('Not allowed by CORS'))
   }
 }}))
+// ── Billing webhook — MUST be registered before express.json() below, so the
+// raw request body bytes survive for HMAC signature verification (Lemon
+// Squeezy signs the raw body, not the parsed JSON). Its own dedicated
+// express.raw() middleware means the global json() parser never touches this
+// route. Registered before the auth middleware too, so it's naturally exempt
+// — webhook calls come from the payment provider, not a signed-in browser.
+app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+  const signature = req.headers['x-signature']
+  const raw = req.body as Buffer
+  if (!verifyLemonSqueezySignature(raw, typeof signature === 'string' ? signature : undefined, config.lemonSqueezyWebhookSecret)) {
+    res.status(401).json({ error: 'Invalid signature' })
+    return
+  }
+
+  let event: { meta?: { event_name?: string; custom_data?: { user_id?: string } }; data?: { attributes?: { status?: string; customer_id?: number; renews_at?: string; ends_at?: string } } }
+  try {
+    event = JSON.parse(raw.toString('utf8'))
+  } catch {
+    res.status(400).json({ error: 'Invalid JSON' })
+    return
+  }
+
+  // The checkout link must attach our internal user id as custom data
+  // (?checkout[custom][user_id]=<googleId>) so it's echoed back here — see
+  // client/src/pages/PricingPage.tsx.
+  const userId = event.meta?.custom_data?.user_id
+  const attrs = event.data?.attributes
+  if (!userId || !attrs) {
+    res.status(200).json({ received: true, skipped: 'no user_id in custom_data' })
+    return
+  }
+
+  // Lemon Squeezy subscription statuses: on_trial | active | paused | past_due
+  // | unpaid | cancelled | expired. Anything other than active/on_trial reverts
+  // the user to free — no separate "grace period" handling in v1.
+  const isActive = attrs.status === 'active' || attrs.status === 'on_trial'
+  await upsertSubscription({
+    user_id: userId,
+    plan: isActive ? 'pro' : 'free',
+    status: attrs.status ?? 'inactive',
+    provider_customer_id: attrs.customer_id ? String(attrs.customer_id) : null,
+    current_period_end: attrs.renews_at ?? attrs.ends_at ?? null,
+  })
+
+  res.status(200).json({ received: true })
+})
+
 app.use(express.json({ limit: '100kb' }))
 
 // ── Auth: require a valid Bearer token on every /api route ──────────────────────
@@ -126,8 +175,26 @@ app.get('/api/problems', (_req: Request, res: Response) => {
   ])
 })
 
-// ── REST: CV gap analysis ─────────────────────────────────────────────────────
+// ── REST: billing status ──────────────────────────────────────────────────────
+app.get('/api/billing/status', async (req: Request, res: Response) => {
+  const googleId = (req as AuthRequest).googleId
+  const plan = await getPlan(googleId)
+  const sessionsUsedThisMonth = await countSessionsThisMonth(googleId)
+  res.json({
+    plan,
+    sessionsUsedThisMonth,
+    sessionsLimit: plan === 'pro' ? null : FREE_SESSIONS_PER_MONTH,
+  })
+})
+
+// ── REST: CV gap analysis (Pro only) ──────────────────────────────────────────
 app.post('/api/analyze-cv-gap', llmRateLimit, costBreaker, async (req: Request, res: Response) => {
+  const googleId = (req as AuthRequest).googleId
+  const { allowed } = await checkEntitlement(googleId, 'cv')
+  if (!allowed) {
+    res.status(402).json({ error: 'CV analysis is a Pro feature', paywall: 'cv' })
+    return
+  }
   const { cvText, jobDescription } = req.body
   if (!cvText || !jobDescription) {
     res.status(400).json({ error: 'cvText and jobDescription are required' })

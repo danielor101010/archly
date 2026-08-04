@@ -11,6 +11,7 @@ import { checkLlmRate, checkWsConnRate, LLM_RATE_MESSAGE } from '../security/rat
 import { isOverDailyBudget, recordSpend, FRIENDLY_CAPACITY_MESSAGE } from '../security/costTracker.js'
 import { LIMITS } from '../security/limits.js'
 import { recordLedgerUsage } from '../db.js'
+import { checkEntitlement } from '../billing/entitlements.js'
 
 interface Connection {
   ws: WebSocket
@@ -172,6 +173,18 @@ export function createWSHub(wss: WebSocketServer): void {
         }
 
         case 'CREATE_SESSION': {
+          // Entitlement gate — only practice/interview count against the free-tier
+          // session quota; cv-interview is a separate Pro-only feature; concept/
+          // coding modes stay ungated (learning content, per PRODUCTION_PLAN §6.3).
+          const isBillableSessionMode = msg.mode === 'practice' || msg.mode === 'interview'
+          if (isBillableSessionMode) {
+            const { allowed } = await checkEntitlement(googleId, 'session')
+            if (!allowed) { send(ws, { type: 'PAYWALL', feature: 'session' }); return }
+          } else if (msg.mode === 'cv-interview') {
+            const { allowed } = await checkEntitlement(googleId, 'cv')
+            if (!allowed) { send(ws, { type: 'PAYWALL', feature: 'cv' }); return }
+          }
+
           if (msg.customProblem) {
             if ((msg.customProblem.title?.length ?? 0) > LIMITS.customTitle) {
               send(ws, { type: 'ERROR', message: `Title too long (max ${LIMITS.customTitle} chars)` })
@@ -185,7 +198,9 @@ export function createWSHub(wss: WebSocketServer): void {
 
           const session = sessionStore.create(googleId, msg.mode, msg.problemId, msg.userLevel, msg.customProblem)
           conn.sessionId = session.id
-          void recordLedgerUsage(googleId, { sessionsStarted: 1 })
+          // Only count practice/interview starts toward the free-tier quota — this
+          // ledger total IS what countSessionsThisMonth reads for entitlement checks.
+          if (isBillableSessionMode) void recordLedgerUsage(googleId, { sessionsStarted: 1 })
 
           let greeting: string
           if (msg.mode === 'concept') {
@@ -368,6 +383,8 @@ export function createWSHub(wss: WebSocketServer): void {
             send(ws, { type: 'ERROR', message: 'Session not found' })
             return
           }
+          const solutionEntitlement = await checkEntitlement(googleId, 'solution')
+          if (!solutionEntitlement.allowed) { send(ws, { type: 'PAYWALL', feature: 'solution' }); return }
           const rl = checkLlmRate(googleId)
           if (!rl.allowed) {
             send(ws, { type: 'ERROR', message: LLM_RATE_MESSAGE })
@@ -408,6 +425,8 @@ export function createWSHub(wss: WebSocketServer): void {
         }
 
         case 'ANALYZE_CV': {
+          const cvEntitlement = await checkEntitlement(googleId, 'cv')
+          if (!cvEntitlement.allowed) { send(ws, { type: 'PAYWALL', feature: 'cv' }); return }
           if ((msg.cvText?.length ?? 0) > LIMITS.cvText) {
             send(ws, { type: 'ERROR', message: `CV text too long (max ${LIMITS.cvText} chars)` })
             return

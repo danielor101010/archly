@@ -49,6 +49,9 @@ if (!resolvedLlmKey) {
 if (!process.env.BREVO_API_KEY) {
   console.warn('[config] WARNING: BREVO_API_KEY is not set — welcome emails will be skipped.')
 }
+if (!process.env.LEMONSQUEEZY_WEBHOOK_SECRET) {
+  console.warn('[config] WARNING: LEMONSQUEEZY_WEBHOOK_SECRET is not set — the billing webhook will reject all events until it is.')
+}
 
 export const config = {
   // Required (validated above)
@@ -70,6 +73,7 @@ export const config = {
   brevoApiKey: process.env.BREVO_API_KEY ?? '',
   brevoSenderEmail: process.env.BREVO_SENDER_EMAIL ?? 'danior878@gmail.com',
   clientUrl: process.env.CLIENT_URL ?? '',
+  lemonSqueezyWebhookSecret: process.env.LEMONSQUEEZY_WEBHOOK_SECRET ?? '',
 
   // Server
   port: num('PORT', 3001),

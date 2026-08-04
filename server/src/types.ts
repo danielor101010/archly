@@ -126,4 +126,5 @@ export type WSServerMessage =
   | { type: 'NODE_EXPLANATION'; nodeId: string; text: string }
   | { type: 'CV_ANALYZED'; skills: string[]; problems: Array<{ id: string; title: string; description: string; relevantSkills: string[]; difficulty: string }> }
   | { type: 'ERROR'; message: string }
+  | { type: 'PAYWALL'; feature: 'session' | 'solution' | 'cv' }
   | { type: 'PONG' }

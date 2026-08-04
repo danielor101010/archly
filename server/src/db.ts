@@ -127,3 +127,58 @@ export async function recordLedgerUsage(
     // best-effort — table may be absent; never throw
   }
 }
+
+// ── Subscriptions (best-effort) ─────────────────────────────────────────────────
+// Same philosophy as the usage ledger: the app must keep working — with everyone
+// correctly treated as 'free' — even if the `subscriptions` migration hasn't been
+// applied yet. Never throw.
+
+export type SubscriptionRow = {
+  user_id: string
+  plan: string
+  status: string
+  provider_customer_id?: string | null
+  current_period_end?: string | null
+}
+
+export async function getSubscription(userId: string): Promise<SubscriptionRow | null> {
+  try {
+    const { data } = await db.from('subscriptions').select('*').eq('user_id', userId).single()
+    return (data as SubscriptionRow) ?? null
+  } catch {
+    return null
+  }
+}
+
+export async function upsertSubscription(row: SubscriptionRow): Promise<void> {
+  try {
+    await db.from('subscriptions').upsert(row, { onConflict: 'user_id' })
+  } catch {
+    // best-effort — table may be absent; never throw
+  }
+}
+
+/**
+ * Sum of `sessions_started` in the current UTC calendar month. The caller
+ * (hub.ts) only increments this for practice/interview session creates, so it
+ * directly represents billable session usage against the free-tier quota.
+ *
+ * Fails OPEN (returns 0) on any error — including a missing migration. This is
+ * deliberate: a DB hiccup or an unapplied migration must never lock every user
+ * out of the free tier they're entitled to. The tradeoff is explicit: until the
+ * migration is applied, the free-tier session cap is not enforced at all.
+ */
+export async function countSessionsThisMonth(userId: string): Promise<number> {
+  try {
+    const now = new Date()
+    const firstOfMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+    const { data } = await db
+      .from('usage_ledger')
+      .select('sessions_started')
+      .eq('user_id', userId)
+      .gte('day', firstOfMonth)
+    return (data ?? []).reduce((sum: number, row: { sessions_started?: number }) => sum + (row.sessions_started ?? 0), 0)
+  } catch {
+    return 0
+  }
+}
