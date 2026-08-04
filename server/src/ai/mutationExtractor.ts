@@ -54,6 +54,28 @@ export function toCanvasCommand(m: RawMutation): CanvasCommand | null {
 }
 
 /**
+ * Situational guidance injected into the extraction prompt so it can tell
+ * "the candidate stated a requirement" apart from "the candidate described a
+ * component to add" — the actual, content-level distinction that matters.
+ * The code-level phase GATE below deliberately stays permissive (a cheap
+ * early-exit, not a precision instrument — see its own doc comment below);
+ * this is where real precision belongs, since only the model sees what was
+ * actually said this turn.
+ */
+export function phaseGuidance(phase: Session['phase']): string {
+  switch (phase) {
+    case 'api_design':
+    case 'data_models':
+      return 'CONVERSATION STAGE: still early — likely discussing functional/non-functional requirements, API endpoints, or data models, NOT yet system architecture. Be CONSERVATIVE here.'
+    case 'high_level_design':
+    case 'deep_dive':
+      return 'CONVERSATION STAGE: the candidate is actively describing system architecture.'
+    default:
+      return ''
+  }
+}
+
+/**
  * Whether this session's current phase permits drawing at all.
  *
  * BUG HISTORY: this originally only allowed 'high_level_design'/'deep_dive'.
@@ -97,6 +119,8 @@ export async function extractGraphMutations(
 
   const prompt = `You track architecture-diagram changes for a system design tool. Given the latest exchange, output ONLY the diagram mutations implied by what the CANDIDATE explicitly described (not what the coach/interviewer merely asked about).
 
+${phaseGuidance(session.phase)}
+
 EXISTING NODES (use these exact ids — never invent a different id for an existing node):
 ${nodeList}
 
@@ -110,6 +134,9 @@ Coach: ${assistantReply.slice(0, 1500)}
 Node types allowed: ${NODE_TYPES.join(', ')}
 
 Rules:
+- CRITICAL DISTINCTION — requirements/API/data talk is NOT architecture: do NOT extract a mutation just because a system-like noun was mentioned while the candidate is stating a REQUIREMENT ("the system needs to store photos", "users need to log in", "it must handle 1M requests/sec"), defining an API endpoint ("GET /photos returns a list"), or naming a data field ("User has an email and createdAt"). None of those are architecture components.
+- Only extract when the candidate describes an actual COMPONENT they are ADDING TO THE DESIGN — e.g. "I'll put a load balancer in front of the API servers", "I'll use Redis as a cache", "let's add a Postgres database for user data". This is about what goes ON THE DIAGRAM, not what the system should do.
+- When genuinely unsure whether something is a requirement or a component, return an empty mutations array — a missed mutation is far cheaper than a wrong one on the candidate's diagram.
 - Only add a node for a component the candidate EXPLICITLY named. Do not invent supporting infrastructure they didn't mention.
 - Never re-add a node whose id/label already exists above.
 - New node ids: short kebab-case, unique, not already in the existing list (e.g. "cache-1", "db-2").
